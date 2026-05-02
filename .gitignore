@@ -7,10 +7,14 @@ dist/
 *.img
 *.7z
 .coverage
+.DS_Store
+imgs/
 
 # Build outputs (Docker-produced, not checked in)
 build/proxmark3
 build/lua.zip
+build/*.ipk
+build/icopy-qemu-screen.png
 
 # Screenshots (dev only)
 screenshot_*.png

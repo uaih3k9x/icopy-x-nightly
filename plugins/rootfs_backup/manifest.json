@@ -1,0 +1,9 @@
+{
+    "name": "RootFS Backup",
+    "version": "1.0.0",
+    "author": "uaih3k9x",
+    "description": "Back up boot, rootfs, and userdata partitions to /mnt/upan",
+    "entry_class": "RootFSBackupPlugin",
+    "permissions": ["filesystem"],
+    "order": 35
+}

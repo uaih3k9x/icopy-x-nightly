@@ -1,0 +1,119 @@
+{
+    "plugin": true,
+    "name": "RootFS Backup",
+    "version": "1.0.0",
+    "initial_state": "idle",
+    "states": {
+        "idle": {
+            "screen": {
+                "title": "RootFS Backup",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "Backup boot/rootfs", "size": "large"},
+                        {"text": "Saves p1, p2, p3 to", "size": "normal"},
+                        {"text": "/mnt/upan/backups", "size": "normal"},
+                        {"text": "Data partition skipped.", "size": "normal"}
+                    ]
+                },
+                "buttons": {"left": "Back", "right": "Next"},
+                "keys": {
+                    "M1": "finish",
+                    "M2": "push:confirm",
+                    "OK": "push:confirm"
+                }
+            }
+        },
+        "confirm": {
+            "screen": {
+                "title": "Confirm Backup",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "Needs about 3.3GB.", "size": "large"},
+                        {"text": "Keep USB power on.", "size": "normal"},
+                        {"text": "PWR aborts backup.", "size": "normal"},
+                        {"text": "Do not remove storage.", "size": "normal"}
+                    ]
+                },
+                "buttons": {"left": "Cancel", "right": "Start"},
+                "keys": {
+                    "M1": "pop",
+                    "M2": "set_state:running",
+                    "OK": "set_state:running"
+                }
+            }
+        },
+        "running": {
+            "on_enter": "run:do_backup",
+            "screen": {
+                "title": "Backing Up",
+                "content": {
+                    "type": "progress",
+                    "message": "{progress_message}",
+                    "value": "{progress_value}",
+                    "max": 100
+                },
+                "buttons": {"left": null, "right": null},
+                "keys": {}
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==cancelled": "cancelled",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "done": {
+            "screen": {
+                "title": "Backup Done",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{result_text}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Again"},
+                "keys": {
+                    "M1": "finish",
+                    "M2": "set_state:idle"
+                }
+            }
+        },
+        "cancelled": {
+            "screen": {
+                "title": "Backup Cancelled",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{result_text}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Again"},
+                "keys": {
+                    "M1": "finish",
+                    "M2": "set_state:idle"
+                }
+            }
+        },
+        "error": {
+            "screen": {
+                "title": "Backup Error",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{error_msg}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Again"},
+                "keys": {
+                    "M1": "finish",
+                    "M2": "set_state:idle"
+                }
+            }
+        }
+    }
+}
