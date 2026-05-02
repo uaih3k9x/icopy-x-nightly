@@ -82,6 +82,24 @@ _ACTIVITY_REGISTRY = {
 # discovered PluginInfo objects (both promoted and non-promoted).
 _discovered_plugins = []
 
+
+def _compose_menu_items():
+    """Build main menu entries from static items and current plugins."""
+    items = list(MainActivity.MENU_ITEMS)
+    non_promoted = [p for p in _discovered_plugins if not p.promoted]
+    promoted = [p for p in _discovered_plugins if p.promoted]
+
+    if non_promoted:
+        items.append(("Plugins", "plugins", "plugins_menu"))
+
+    for plugin in promoted:
+        icon = plugin.icon_path or "plugin"
+        action_key = "plugin:" + plugin.key
+        items.append((plugin.name, icon, action_key))
+
+    items.append(("Settings", "3", "settings_menu"))
+    return items
+
 def init_plugins():
     """Discover and register plugins from the plugins/ directory.
 
@@ -104,6 +122,35 @@ def init_plugins():
     except Exception as exc:
         logger.error("Plugin discovery failed: %s", exc)
         _discovered_plugins = []
+
+
+def reload_plugins():
+    """Rediscover plugins and refresh visible plugin-aware menus.
+
+    This is intended for development and safe plugin hot-plug workflows.  It
+    does not replace an already running plugin activity; the new plugin code is
+    used the next time the plugin is opened.
+    """
+    global _discovered_plugins
+    try:
+        from lib.plugin_loader import reload_plugins as _reload_plugins
+        _discovered_plugins = _reload_plugins()
+        logger.info(
+            "Plugin system: reloaded %d plugin(s)", len(_discovered_plugins))
+    except Exception as exc:
+        logger.error("Plugin reload failed: %s", exc)
+        _discovered_plugins = []
+
+    try:
+        from lib import actstack
+        for activity in list(actstack.get_stack()):
+            refresh = getattr(activity, 'refresh_plugins', None)
+            if callable(refresh):
+                refresh()
+    except Exception as exc:
+        logger.error("Plugin menu refresh failed: %s", exc)
+
+    return _discovered_plugins
 
 class MainActivity(BaseActivity):
     """Root activity -- main menu with 14 items.
@@ -145,24 +192,7 @@ class MainActivity(BaseActivity):
     def __init__(self, bundle=None):
         super().__init__(bundle)
         self.lv_main_page = None
-        self._menu_items = list(self.MENU_ITEMS)
-
-        # --- Plugin integration ---
-        # Append "Plugins" submenu entry if there are non-promoted plugins,
-        # then append each promoted plugin as a direct main menu entry.
-        non_promoted = [p for p in _discovered_plugins if not p.promoted]
-        promoted = [p for p in _discovered_plugins if p.promoted]
-
-        if non_promoted:
-            self._menu_items.append(("Plugins", "plugins", "plugins_menu"))
-
-        for plugin in promoted:
-            icon = plugin.icon_path or "plugin"
-            action_key = "plugin:" + plugin.key
-            self._menu_items.append((plugin.name, icon, action_key))
-
-        # Settings is always the last menu item
-        self._menu_items.append(("Settings", "3", "settings_menu"))
+        self._menu_items = _compose_menu_items()
 
     def onCreate(self, bundle=None):
         """Set up the main menu.
@@ -361,6 +391,33 @@ class MainActivity(BaseActivity):
             self.setTitle('%s %d/%d' % (base_title, current, total))
         else:
             self.setTitle(base_title)
+
+    def refresh_plugins(self):
+        """Refresh plugin-derived main-menu entries after plugin reload."""
+        selected_key = None
+        if self.lv_main_page is not None and self._menu_items:
+            pos = self.lv_main_page.selection()
+            if 0 <= pos < len(self._menu_items):
+                selected_key = self._menu_items[pos][2]
+
+        self._menu_items = _compose_menu_items()
+
+        if self.lv_main_page is not None:
+            labels = [item[0] for item in self._menu_items]
+            icons = [item[1] for item in self._menu_items]
+            self.lv_main_page.setItems(labels)
+            self.lv_main_page.setIcons(icons)
+
+            new_pos = 0
+            if selected_key:
+                for idx, item in enumerate(self._menu_items):
+                    if item[2] == selected_key:
+                        new_pos = idx
+                        break
+            self.lv_main_page.setSelection(new_pos)
+            if self.lv_main_page.isShowing():
+                self.lv_main_page.show()
+        self._updateTitle()
 
     def _find_plugin_info(self, plugin_key):
         """Look up a PluginInfo by its key from the discovered plugins.

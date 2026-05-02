@@ -26,6 +26,7 @@ PYTHON = ROOT + '/usr/local/python-3.8.0/bin/python3.8'
 RUNNER = '/home/qx/icopy-x-reimpl/tools/icopy_emulator_runner.py'
 
 VALID_KEYS = {'UP', 'DOWN', 'LEFT', 'RIGHT', 'OK', 'M1', 'M2', 'PWR', 'ALL'}
+VALID_COMMANDS = {'RELOAD_PLUGINS'}
 
 
 def run_orb(command: str, *, root: bool = False, timeout: int = 15) -> subprocess.CompletedProcess:
@@ -73,6 +74,25 @@ findmnt /mnt/icopy-rootfs /mnt/icopy-userdata /mnt/icopy-boot /mnt/icopy-runroot
     return result_dict(proc)
 
 
+def sync_dev_sources() -> dict:
+    """Sync editable Python/UI/plugin sources into the QEMU runroot."""
+    cmd = r'''
+set -e
+app=/mnt/icopy-runroot/home/pi/ipk_app_main
+repo=/home/qx/icopy-x-reimpl
+mkdir -p "$app/lib" "$app/main" "$app/screens" "$app/plugins"
+rsync -a "$repo/src/app.py" "$app/app.py"
+rsync -a --delete --exclude '__pycache__/' "$repo/src/lib/" "$app/lib/"
+rsync -a --exclude '__pycache__/' "$repo/src/middleware/" "$app/lib/"
+rsync -a --delete --exclude '__pycache__/' "$repo/src/main/" "$app/main/"
+rsync -a --delete "$repo/src/screens/" "$app/screens/"
+rsync -a --delete --exclude '__pycache__/' "$repo/plugins/" "$app/plugins/"
+find "$app/plugins" -maxdepth 2 -name manifest.json | sort
+'''
+    proc = run_orb(cmd, root=True, timeout=30)
+    return result_dict(proc)
+
+
 def stop_emulator() -> dict:
     cmd = r'''
 python3 - <<'PY'
@@ -107,7 +127,14 @@ pgrep -af '^/usr/bin/qemu-arm .*python3.8' || true
 def start_emulator() -> dict:
     ensure_mounts()
     ensure_xvfb()
-    run_orb('rm -f %s %s' % (shell_quote(KEY_FILE), shell_quote(APP_LOG)), root=True)
+    sync_dev_sources()
+    run_orb(
+        'rm -f {key_file} {log}; touch {key_file}; chmod 666 {key_file}'.format(
+            key_file=shell_quote(KEY_FILE),
+            log=shell_quote(APP_LOG),
+        ),
+        root=True,
+    )
     cmd = (
         'cd {app}; '
         'nohup env PYTHONHOME={root}/usr/local/python-3.8.0 '
@@ -135,6 +162,39 @@ def start_emulator() -> dict:
 def restart_emulator() -> dict:
     stop_emulator()
     return start_emulator()
+
+
+def send_command(command: str) -> dict:
+    command = command.upper()
+    if command not in VALID_COMMANDS:
+        return {'ok': False, 'error': 'invalid command'}
+    cmd = 'printf "%s\\n" >> %s' % (command, shell_quote(KEY_FILE))
+    proc = run_orb(cmd, root=True)
+    time.sleep(0.25)
+    capture_screen()
+    data = result_dict(proc)
+    data['command'] = command
+    return data
+
+
+def reload_plugins() -> dict:
+    sync = sync_dev_sources()
+    if not sync.get('ok'):
+        return sync
+    command = send_command('RELOAD_PLUGINS')
+    return {
+        'ok': bool(sync.get('ok')) and bool(command.get('ok')),
+        'sync': sync,
+        'command': command,
+        'stdout': '[sync]\n%s\n[reload]\n%s' % (
+            sync.get('stdout', ''),
+            command.get('stdout', ''),
+        ),
+        'stderr': '%s%s' % (
+            sync.get('stderr', ''),
+            command.get('stderr', ''),
+        ),
+    }
 
 
 def send_key(key: str) -> dict:
@@ -374,6 +434,7 @@ INDEX_HTML = r'''<!doctype html>
     <section class="panel">
       <div class="toolbar">
         <button onclick="action('refresh')">Refresh</button>
+        <button onclick="action('reload_plugins')">Reload Plugins</button>
         <button onclick="action('restart')" class="primary">Restart Emulator</button>
         <button onclick="action('stop')" class="danger">Stop</button>
         <button onclick="action('start')">Start</button>
@@ -505,6 +566,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(restart_emulator())
         elif path == '/api/stop':
             self._json(stop_emulator())
+        elif path == '/api/reload_plugins':
+            self._json(reload_plugins())
         elif path == '/api/refresh':
             self._json(get_status())
         else:

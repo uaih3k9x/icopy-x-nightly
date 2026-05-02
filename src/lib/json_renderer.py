@@ -52,7 +52,8 @@ from lib._constants import (
     SELECT_BG,
     NORMAL_TEXT_COLOR,
     PROGRESS_X, PROGRESS_Y, PROGRESS_W, PROGRESS_H,
-    PROGRESS_BG, PROGRESS_FG, PROGRESS_MSG_COLOR,
+    PROGRESS_BG, PROGRESS_FG, PROGRESS_MSG_X, PROGRESS_MSG_Y,
+    PROGRESS_MSG_ANCHOR, PROGRESS_MSG_COLOR,
     COLOR_ACCENT,
     BATTERY_X, BATTERY_Y, BATTERY_W, BATTERY_H,
     BATTERY_OUTLINE_COLOR, BATTERY_OUTLINE_WIDTH,
@@ -255,9 +256,9 @@ class JsonRenderer:
 
         # Message text above bar
         if message:
-            c.create_text(SCREEN_W // 2, PROGRESS_Y - 2,
+            c.create_text(PROGRESS_MSG_X, PROGRESS_MSG_Y,
                           text=message, fill=PROGRESS_MSG_COLOR,
-                          font=resources.get_font(10), anchor='s',
+                          font=resources.get_font(10), anchor=PROGRESS_MSG_ANCHOR,
                           tags='_jr_content')
 
         # Background track

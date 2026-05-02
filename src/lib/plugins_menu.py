@@ -84,19 +84,10 @@ class PluginsMenuActivity(BaseActivity):
             5. Set title with page indicator
         """
         # Buttons
-        self.setLeftButton("")
+        self.setLeftButton(resources.get_str('back'))
         self.setRightButton("")
 
-        # Get non-promoted plugins from actmain module state
-        try:
-            from lib import actmain
-            self._plugins = [
-                p for p in actmain._discovered_plugins
-                if not p.promoted
-            ]
-        except Exception:
-            logger.error("Failed to load plugin list from actmain")
-            self._plugins = []
+        self._plugins = self._load_plugins()
 
         # Build ListView
         canvas = self.getCanvas()
@@ -114,6 +105,45 @@ class PluginsMenuActivity(BaseActivity):
             self.lv_plugins.show()
 
         # Title with page indicator: "Plugins N/M"
+        self._updateTitle()
+
+    def _load_plugins(self):
+        """Return current non-promoted plugins from actmain module state."""
+        try:
+            from lib import actmain
+            return [
+                p for p in actmain._discovered_plugins
+                if not p.promoted
+            ]
+        except Exception:
+            logger.error("Failed to load plugin list from actmain")
+            return []
+
+    def refresh_plugins(self):
+        """Refresh this menu after the plugin loader rediscovered plugins."""
+        selected_key = None
+        if self.lv_plugins is not None and self._plugins:
+            pos = self.lv_plugins.selection()
+            if 0 <= pos < len(self._plugins):
+                selected_key = self._plugins[pos].key
+
+        self._plugins = self._load_plugins()
+
+        if self.lv_plugins is not None:
+            labels = [p.name for p in self._plugins]
+            icons = [p.icon_path or 'plugin' for p in self._plugins]
+            self.lv_plugins.setItems(labels)
+            self.lv_plugins.setIcons(icons)
+
+            new_pos = 0
+            if selected_key:
+                for idx, plugin in enumerate(self._plugins):
+                    if plugin.key == selected_key:
+                        new_pos = idx
+                        break
+            self.lv_plugins.setSelection(new_pos)
+            if self.lv_plugins.isShowing():
+                self.lv_plugins.show()
         self._updateTitle()
 
     def onResume(self):

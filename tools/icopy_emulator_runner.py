@@ -17,6 +17,17 @@ DEFAULT_KEY_FILE = '/tmp/icopy_web_keys.txt'
 VALID_KEYS = {
     'UP', 'DOWN', 'LEFT', 'RIGHT', 'OK', 'M1', 'M2', 'PWR', 'ALL',
 }
+VALID_COMMANDS = {'RELOAD_PLUGINS'}
+
+
+def _reload_plugins():
+    """Reload plugin metadata/code in the running app process."""
+    try:
+        from lib import actmain
+        plugins = actmain.reload_plugins()
+        print('[WEBCTL] reloaded %d plugin(s)' % len(plugins), flush=True)
+    except Exception as exc:
+        print('[WEBCTL] reload plugins failed: %s' % exc, flush=True)
 
 
 def _read_keys(key_file):
@@ -34,6 +45,10 @@ def _read_keys(key_file):
                     for line in handle:
                         key = line.strip().upper()
                         if not key or key.startswith('#'):
+                            continue
+                        if key in VALID_COMMANDS:
+                            if key == 'RELOAD_PLUGINS':
+                                _reload_plugins()
                             continue
                         if key not in VALID_KEYS:
                             print('[WEBKEY] ignored %s' % key, flush=True)

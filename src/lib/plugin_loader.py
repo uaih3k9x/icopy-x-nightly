@@ -51,6 +51,8 @@ import sys
 
 logger = logging.getLogger(__name__)
 
+_PLUGIN_MODULE_PREFIX = 'plugins.'
+
 # Pattern for semantic version: X.Y.Z where X, Y, Z are non-negative integers.
 _SEMVER_RE = re.compile(r'^\d+\.\d+\.\d+$')
 
@@ -361,7 +363,7 @@ def load_plugin_class(plugin_dir, entry_class_name):
         Tuple of (class_object, error_string_or_None).
     """
     dirname = os.path.basename(plugin_dir)
-    module_name = 'plugins.{}'.format(dirname)
+    module_name = '{}{}'.format(_PLUGIN_MODULE_PREFIX, dirname)
     plugin_py = os.path.join(plugin_dir, 'plugin.py')
 
     try:
@@ -377,6 +379,7 @@ def load_plugin_class(plugin_dir, entry_class_name):
         if plugin_dir not in sys.path:
             sys.path.insert(0, plugin_dir)
 
+        sys.modules.pop(module_name, None)
         sys.modules[module_name] = module
         try:
             spec.loader.exec_module(module)
@@ -396,6 +399,37 @@ def load_plugin_class(plugin_dir, entry_class_name):
             entry_class_name, plugin_py)
 
     return cls, None
+
+
+def unload_plugin_modules(plugin_key=None):
+    """Remove loaded plugin modules so the next discovery imports fresh code.
+
+    Args:
+        plugin_key: Optional plugin directory name.  If omitted, unload all
+            modules imported under the ``plugins.`` namespace.
+
+    Returns:
+        Number of module entries removed from ``sys.modules``.
+    """
+    if plugin_key:
+        prefixes = (
+            '{}{}'.format(_PLUGIN_MODULE_PREFIX, plugin_key),
+            '{}{}.'.format(_PLUGIN_MODULE_PREFIX, plugin_key),
+        )
+        names = [
+            name for name in list(sys.modules)
+            if name == prefixes[0] or name.startswith(prefixes[1])
+        ]
+    else:
+        names = [
+            name for name in list(sys.modules)
+            if name.startswith(_PLUGIN_MODULE_PREFIX)
+        ]
+
+    for name in names:
+        sys.modules.pop(name, None)
+    importlib.invalidate_caches()
+    return len(names)
 
 
 def _resolve_icon_path(plugin_dir, manifest):
@@ -612,3 +646,9 @@ def discover_plugins(plugin_dir=None):
         logger.debug('No plugins discovered in %s', plugin_dir)
 
     return plugins
+
+
+def reload_plugins(plugin_dir=None):
+    """Unload plugin modules and rediscover plugin metadata/classes."""
+    unload_plugin_modules()
+    return discover_plugins(plugin_dir=plugin_dir)

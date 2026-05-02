@@ -981,7 +981,7 @@ class ProgressBar:
             else:
                 self._canvas.create_text(
                     self._x + self._width // 2,
-                    self._y - 2,
+                    self._y + (PROGRESS_MSG_Y - PROGRESS_Y),
                     text=self._message,
                     fill=PROGRESS_MSG_COLOR,
                     font=resources.get_font(10),

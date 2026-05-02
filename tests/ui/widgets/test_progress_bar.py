@@ -19,6 +19,7 @@ from lib._constants import (
     PROGRESS_H,
     PROGRESS_BG,
     PROGRESS_FG,
+    PROGRESS_MSG_Y,
     PROGRESS_MSG_COLOR,
     PROGRESS_MSG_ANCHOR,
 )
@@ -182,16 +183,15 @@ class TestProgressBarFill:
 class TestProgressBarMessage:
 
     def test_message_position(self, canvas):
-        """Message text is at (120, y-2) — center-x of bar, 2px above top."""
+        """Message text is at the shared progress message coordinate."""
         pb = ProgressBar(canvas)
         pb.setMessage('Reading...')
         pb.show()
         msg_items = _find_by_tag(canvas, ':msg')
         assert len(msg_items) == 1
         _, item = msg_items[0]
-        # (x + width//2, y - 2) = (20 + 100, 210 - 2) = (120, 208)
         assert item['coords'] == [PROGRESS_X + PROGRESS_W // 2,
-                                   PROGRESS_Y - 2]
+                                   PROGRESS_MSG_Y]
 
     def test_message_color(self, canvas):
         """Message text color is #1C6AEB."""

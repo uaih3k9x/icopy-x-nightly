@@ -135,7 +135,7 @@ CHECK_COLOR = CHECK_COLOR_CHECKED_FILL  # backward compat
 # ═══════════════════════════════════════════════════
 # Ground truth: scan_tag_scanning_2.png pixel measurement:
 #   Bar:  y=210..229 (20px tall), x=20..220 (200px wide)
-#   Text: "Scanning..." at y≈196, centered, blue (#1C6AEB)
+#   Text: centered, blue (#1C6AEB), kept clear of bottom button/progress area
 #   Bar is anchored to BOTTOM of screen (inside button bar zone)
 #   No percentage counter (% only in Erase flow)
 PROGRESS_X = 20
@@ -145,7 +145,7 @@ PROGRESS_H = 20
 PROGRESS_BG = '#eeeeee'        # RGB(238,238,238)
 PROGRESS_FG = '#1C6AEB'        # RGB(28,106,235) blue
 PROGRESS_MSG_X = 120
-PROGRESS_MSG_Y = 208
+PROGRESS_MSG_Y = 203
 PROGRESS_MSG_ANCHOR = 's'      # bottom-center, just above the bar
 PROGRESS_MSG_COLOR = '#1C6AEB' # matches progress fill color
 
