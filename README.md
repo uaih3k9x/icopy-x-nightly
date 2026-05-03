@@ -30,6 +30,27 @@ feature requests, logs, dump samples, and reproducible test cases are welcome.
 Use this fork at your own risk. Prefer no-flash builds unless you know exactly
 why you need a flash build.
 
+## Branches / 分支策略
+
+This fork now uses three long-lived branches:
+
+- `nightly` is the default development branch. New device fixes, UI work,
+  plugins, rescue tools, packaging changes, and other experiments land here
+  first. Expect frequent changes.
+- `stable` is for changes that have worked on real hardware and are good enough
+  for daily personal use. Features graduate here from `nightly`.
+- `main` is the conservative baseline. Only changes that have spent time in
+  `stable` and have no known serious regressions should move here.
+
+中文说明：
+
+- `nightly`：默认开发分支，所有实验和新功能先放这里。
+- `stable`：真实设备上验证过、日常使用基本可靠的版本。
+- `main`：最保守的基线，只放长期验证后很稳的改动。
+
+If you are testing new work from this repository, use `nightly`. If you want the
+least risky branch from this fork, use `main` or wait for a tagged build.
+
 ## Experimental Work in This Fork
 
 This fork currently carries local, in-progress work that is intentionally more
@@ -49,9 +70,45 @@ aggressive than the upstream project:
   network configuration changes.
 - System diagnostic dump helpers that collect device logs, USB/WLAN inventory,
   kernel modules, and network state for real-hardware debugging.
+- PC-Mode USB gadget handoff fixes. When the boot rescue USB network gadget is
+  active, PC-Mode now suspends it before loading the ACM+Mass-Storage gadget and
+  restores it after PC-Mode exits.
+- Boot rescue tooling that can patch the boot initramfs to install a rescue SSH
+  network service. The rescue path tries USB CDC-NCM first, then CDC-ECM, then
+  `g_ether`, and can also attempt Wi-Fi from `/mnt/upan/wifi.conf`.
+- Dynamic build metadata. Local IPK builds now stamp both a build version and
+  the git commit hash into the package; the About page displays the build hash
+  instead of a hardcoded value.
+- SSH deployment helper for copying the newest IPK to `/mnt/upan`, removing old
+  root-level IPKs, avoiding macOS AppleDouble sidecars, and using a short SSH
+  ControlPath that works on macOS.
+- Scrollable plugin text rendering improvements, including wrapping and
+  bounded text areas so plugin output can be viewed without overflowing into
+  the softkey bar.
 
 Generated IPKs, raw images, screenshots, Wi-Fi passwords, and device diagnostic
 logs are development artifacts and should not be committed here.
+
+## Current Nightly Highlights
+
+The current `nightly` branch is focused on making local testing and recovery
+safer:
+
+- PC-Mode and rescue USB networking no longer silently fight for the same USB
+  device controller.
+- No-flash IPKs identify their exact source commit on the About page.
+- The repo has a documented `nightly -> stable -> main` promotion path.
+- `tools/deploy_ipk_ssh.sh` can upload the latest generated IPK over SSH:
+
+  ```bash
+  ./tools/deploy_ipk_ssh.sh 192.168.7.2
+  ```
+
+- `tools/boot_rescue/patch_boot_rescue.sh` can install a rescue SSH network
+  service into a mounted boot partition's initramfs.
+
+These features are useful, but they are still part of the experimental branch.
+Test on your own device before trusting them.
 
 ---
 
