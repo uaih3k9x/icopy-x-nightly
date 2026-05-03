@@ -307,22 +307,29 @@ class TestBatteryBar:
         act = SampleActivity()
         act._canvas = MockCanvas()
         assert act._battery_bar is None
+        assert act._wifi_indicator is None
         act._initBatteryBar()
         assert act._battery_bar is not None
+        assert act._wifi_indicator is not None
 
     def test_battery_bar_shown_on_resume(self, activity):
         """onResume creates and shows battery bar."""
         # activity was already started (which calls onResume once)
         assert activity._battery_bar is not None
         assert activity._battery_bar.isShowing() is True
+        assert activity._wifi_indicator is not None
+        assert activity._wifi_indicator.isShowing() is True
 
     def test_battery_bar_hidden_on_pause(self, activity):
         """onPause hides battery bar."""
         # Ensure battery bar is showing first
         assert activity._battery_bar is not None
         assert activity._battery_bar.isShowing() is True
+        assert activity._wifi_indicator is not None
+        assert activity._wifi_indicator.isShowing() is True
         activity.onPause()
         assert activity._battery_bar.isShowing() is False
+        assert activity._wifi_indicator.isShowing() is False
 
 
 # =====================================================================

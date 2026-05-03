@@ -91,6 +91,7 @@ class BaseActivity(Activity):
         _is_title_inited  — True after first setTitle call
         _is_button_inited — True after first button bar bg draw
         _battery_bar    — widget.BatteryBar instance (created lazily)
+        _wifi_indicator — widget.WiFiIndicator instance (created lazily)
         event_ret       — Event return value (default False)
         resumed         — Resume state flag (default False)
     """
@@ -106,6 +107,7 @@ class BaseActivity(Activity):
         self._m1_visible = True
         self._m2_visible = True
         self._battery_bar = None
+        self._wifi_indicator = None
         self.event_ret = False
         self.resumed = False
         # Register with actstack (matches original: actstack.register(self))
@@ -491,9 +493,10 @@ class BaseActivity(Activity):
     # ==================================================================
 
     def _initBatteryBar(self):
-        """Create BatteryBar instance if canvas available.
+        """Create title-bar status widgets if canvas available.
 
-        Uses widget.BatteryBar positioned at (BATTERY_X, BATTERY_Y).
+        Uses widget.BatteryBar positioned at (BATTERY_X, BATTERY_Y) and a
+        Wi-Fi signal indicator immediately to its left.
         Called lazily on first onResume.
         """
         canvas = self.getCanvas()
@@ -503,6 +506,9 @@ class BaseActivity(Activity):
         if self._battery_bar is None:
             from lib.widget import BatteryBar
             self._battery_bar = BatteryBar(canvas, x=BATTERY_X, y=BATTERY_Y)
+        if self._wifi_indicator is None:
+            from lib.widget import WiFiIndicator
+            self._wifi_indicator = WiFiIndicator(canvas)
 
     def _showBatteryBar(self):
         """Show battery bar and register with batteryui poller (called in onResume).
@@ -515,9 +521,11 @@ class BaseActivity(Activity):
         self._initBatteryBar()
         if self._battery_bar is not None:
             self._battery_bar.show()
+            if self._wifi_indicator is not None:
+                self._wifi_indicator.show()
             try:
                 from lib import batteryui
-                batteryui.register(self._battery_bar)
+                batteryui.register(self._battery_bar, self._wifi_indicator)
             except Exception:
                 pass
 
@@ -531,10 +539,12 @@ class BaseActivity(Activity):
         if self._battery_bar is not None:
             try:
                 from lib import batteryui
-                batteryui.unregister(self._battery_bar)
+                batteryui.unregister(self._battery_bar, self._wifi_indicator)
             except Exception:
                 pass
             self._battery_bar.hide()
+        if self._wifi_indicator is not None:
+            self._wifi_indicator.hide()
 
     # ==================================================================
     # LIFECYCLE OVERRIDES

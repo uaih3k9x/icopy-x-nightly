@@ -14,7 +14,7 @@ import pytest
 # Ensure src/ is on the import path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src'))
 
-from lib.widget import BatteryBar, createTag
+from lib.widget import BatteryBar, WiFiIndicator, createTag
 from lib._constants import (
     BATTERY_X,
     BATTERY_Y,
@@ -36,6 +36,9 @@ from lib._constants import (
     BATTERY_COLOR_LOW,
     BATTERY_THRESHOLD_HIGH,
     BATTERY_THRESHOLD_LOW,
+    WIFI_X,
+    WIFI_Y,
+    WIFI_COLOR,
 )
 
 # Import the MockCanvas from the UI conftest
@@ -286,4 +289,50 @@ class TestBatteryBarLifecycle:
         assert bb.isDestroy() is True
         bb.show()
         assert bb.isShowing() is False
+        assert len(canvas.find_all()) == 0
+
+
+# =================================================================
+# Wi-Fi signal indicator
+# =================================================================
+
+class TestWiFiIndicator:
+
+    def test_hidden_without_signal(self, canvas):
+        """No Wi-Fi signal keeps the title bar indicator invisible."""
+        wifi = WiFiIndicator(canvas)
+        wifi.show()
+        assert len(canvas.find_all()) == 0
+
+    def test_strong_signal_draws_three_bars(self, canvas):
+        """Strong signal renders three white bars left of the battery."""
+        wifi = WiFiIndicator(canvas)
+        wifi.setSignal(90)
+        wifi.show()
+
+        rects = canvas.get_items_by_type('rectangle')
+        assert len(rects) == 3
+        assert all(item['options'].get('fill') == WIFI_COLOR for _, item in rects)
+        assert rects[0][1]['coords'][0] == WIFI_X
+        assert rects[0][1]['coords'][1] >= WIFI_Y
+
+    def test_medium_signal_draws_two_bars(self, canvas):
+        wifi = WiFiIndicator(canvas)
+        wifi.setSignal(50)
+        wifi.show()
+        assert len(canvas.get_items_by_type('rectangle')) == 2
+
+    def test_low_signal_draws_one_bar(self, canvas):
+        wifi = WiFiIndicator(canvas)
+        wifi.setSignal(10)
+        wifi.show()
+        assert len(canvas.get_items_by_type('rectangle')) == 1
+
+    def test_signal_none_hides_existing_bars(self, canvas):
+        wifi = WiFiIndicator(canvas)
+        wifi.setSignal(90)
+        wifi.show()
+        assert len(canvas.find_all()) == 3
+
+        wifi.setSignal(None)
         assert len(canvas.find_all()) == 0

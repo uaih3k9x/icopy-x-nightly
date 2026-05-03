@@ -49,25 +49,29 @@ Import: hmi_driver, threading, audio (for playChargingAudio)
 
 import logging
 import threading
+import re
 
 logger = logging.getLogger(__name__)
 
 # ── Module-level state (matches original .so globals) ──────────
 __BATTERY_BAR = []          # Registered BatteryBar widgets
+__WIFI_INDICATOR = []       # Registered WiFiIndicator widgets
 __BATTERY_RUN = False       # Background thread run flag
 __BATTERY_VALUE = 100       # Cached battery percent (0-100)
 __CHARGING_STATE = False    # Cached charging state
+__WIFI_SIGNAL = None        # Cached Wi-Fi quality (0-100), or None if hidden
 __UPDATING = False          # Guard against concurrent updates
 __EVENT = threading.Event() # Poll interval wait handle
 _thread = None              # Background polling thread
 
-def register(battery_bar):
+def register(battery_bar, wifi_indicator=None):
     """Register a BatteryBar widget to receive periodic updates.
 
     Called by BaseActivity._showBatteryBar() during onResume.
 
     Args:
         battery_bar: widget.BatteryBar instance with setBattery()/setCharging().
+        wifi_indicator: optional widget.WiFiIndicator with setSignal().
     """
     if battery_bar not in __BATTERY_BAR:
         __BATTERY_BAR.append(battery_bar)
@@ -77,20 +81,32 @@ def register(battery_bar):
             battery_bar.setCharging(__CHARGING_STATE)
         except Exception:
             pass
+    if wifi_indicator is not None and wifi_indicator not in __WIFI_INDICATOR:
+        __WIFI_INDICATOR.append(wifi_indicator)
+        try:
+            wifi_indicator.setSignal(__WIFI_SIGNAL)
+        except Exception:
+            pass
     logger.debug("batteryui.register: %d bars registered", len(__BATTERY_BAR))
 
-def unregister(battery_bar):
+def unregister(battery_bar, wifi_indicator=None):
     """Unregister a BatteryBar widget.
 
     Called by BaseActivity._hideBatteryBar() during onPause.
 
     Args:
         battery_bar: widget.BatteryBar instance to remove.
+        wifi_indicator: optional widget.WiFiIndicator to remove.
     """
     try:
         __BATTERY_BAR.remove(battery_bar)
     except ValueError:
         pass
+    if wifi_indicator is not None:
+        try:
+            __WIFI_INDICATOR.remove(wifi_indicator)
+        except ValueError:
+            pass
     logger.debug("batteryui.unregister: %d bars registered", len(__BATTERY_BAR))
 
 def start():
@@ -138,7 +154,7 @@ def notifyCharging(is_charging):
         pass
 
     # Push to all registered bars via Tk main thread
-    _schedule_update_views(__BATTERY_VALUE, __CHARGING_STATE)
+    _schedule_update_views(__BATTERY_VALUE, __CHARGING_STATE, __WIFI_SIGNAL)
 
 def __run__():
     """Background polling loop.
@@ -149,7 +165,7 @@ def __run__():
     Uses threading.Event.wait(10) so the thread wakes promptly when
     pause() is called.
     """
-    global __BATTERY_VALUE, __CHARGING_STATE
+    global __BATTERY_VALUE, __CHARGING_STATE, __WIFI_SIGNAL
     logger.debug("batteryui.__run__: entered")
 
     while __BATTERY_RUN:
@@ -168,9 +184,10 @@ def __run__():
 
         __BATTERY_VALUE = battery
         __CHARGING_STATE = charging
+        __WIFI_SIGNAL = _read_wifi_signal()
 
         # Push updates to registered bars
-        _schedule_update_views(battery, charging)
+        _schedule_update_views(battery, charging, __WIFI_SIGNAL)
 
         # Wait 10 seconds (or until signalled by pause())
         __EVENT.wait(10)
@@ -178,26 +195,27 @@ def __run__():
 
     logger.debug("batteryui.__run__: exited")
 
-def _schedule_update_views(battery, charging):
+def _schedule_update_views(battery, charging, wifi_signal=None):
     """Schedule __update_views on the Tk main thread.
 
-    BatteryBar.setBattery() and setCharging() modify canvas items,
+    BatteryBar and WiFiIndicator methods modify canvas items,
     which must happen on the Tk main thread.
     """
     try:
         from lib import actstack
         if actstack._root is not None:
-            actstack._root.after(0, __update_views, battery, charging)
+            actstack._root.after(0, __update_views, battery, charging, wifi_signal)
         else:
-            __update_views(battery, charging)
+            __update_views(battery, charging, wifi_signal)
     except Exception:
         # Fallback: call directly (may be in test/no-Tk context)
-        __update_views(battery, charging)
+        __update_views(battery, charging, wifi_signal)
 
-def __update_views(battery, charging):
-    """Push battery state to all registered BatteryBar widgets.
+def __update_views(battery, charging, wifi_signal=None):
+    """Push battery and Wi-Fi state to registered title-bar widgets.
 
     Iterates __BATTERY_BAR and calls setBattery()/setCharging() on each.
+    Iterates __WIFI_INDICATOR and calls setSignal() on each.
     Guards against concurrent calls via __UPDATING flag.
     Removes destroyed bars from the list.
 
@@ -229,5 +247,74 @@ def __update_views(battery, charging):
                 __BATTERY_BAR.remove(bar)
             except ValueError:
                 pass
+
+        dead_wifi = []
+        for indicator in __WIFI_INDICATOR:
+            try:
+                if indicator.isDestroy():
+                    dead_wifi.append(indicator)
+                    continue
+                indicator.setSignal(wifi_signal)
+            except Exception as e:
+                logger.debug("batteryui: wifi update error: %s", e)
+                dead_wifi.append(indicator)
+
+        for indicator in dead_wifi:
+            try:
+                __WIFI_INDICATOR.remove(indicator)
+            except ValueError:
+                pass
     finally:
         __UPDATING = False
+
+
+def _read_wifi_signal(path='/proc/net/wireless'):
+    """Return Wi-Fi link quality as 0-100, or None when disconnected.
+
+    ``/proc/net/wireless`` is cheap to read and exists for both nl80211 and
+    older Wireless Extensions drivers. A line like ``wlan0: ... 52.  ...``
+    reports quality out of 70.
+    """
+    try:
+        with open(path, 'r') as f:
+            lines = f.read().splitlines()
+    except Exception:
+        return None
+
+    best = None
+    for line in lines[2:]:
+        if ':' not in line:
+            continue
+        rest = line.split(':', 1)[1].strip()
+        if not rest:
+            continue
+        parts = rest.split()
+        if len(parts) < 2:
+            continue
+        raw_quality = parts[1].rstrip('.')
+        if not re.match(r'^-?\d+(\.\d+)?$', raw_quality):
+            continue
+        try:
+            quality = float(raw_quality)
+        except ValueError:
+            continue
+        if quality <= 0:
+            continue
+        pct = int(round(max(0.0, min(70.0, quality)) * 100.0 / 70.0))
+        if best is None or pct > best:
+            best = pct
+    return best
+
+
+def _reset_for_tests():
+    """Reset module globals for headless tests."""
+    global __BATTERY_RUN, __BATTERY_VALUE, __CHARGING_STATE, __WIFI_SIGNAL
+    global __UPDATING
+    __BATTERY_BAR[:] = []
+    __WIFI_INDICATOR[:] = []
+    __BATTERY_RUN = False
+    __BATTERY_VALUE = 100
+    __CHARGING_STATE = False
+    __WIFI_SIGNAL = None
+    __UPDATING = False
+    __EVENT.set()

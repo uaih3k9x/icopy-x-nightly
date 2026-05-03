@@ -105,6 +105,12 @@ from lib._constants import (
     BATTERY_COLOR_CHARGING,
     BATTERY_THRESHOLD_HIGH,
     BATTERY_THRESHOLD_LOW,
+    WIFI_X,
+    WIFI_Y,
+    WIFI_BAR_W,
+    WIFI_BAR_GAP,
+    WIFI_BAR_H,
+    WIFI_COLOR,
     # PageIndicator constants
     PAGE_INDICATOR_COLOR,
     CONTENT_H,
@@ -1641,6 +1647,98 @@ class BatteryBar:
                 font=('mononoki', 7),
                 anchor='center',
                 tags=self._tag_charge,
+            )
+
+
+# =====================================================================
+# WiFiIndicator
+# =====================================================================
+
+class WiFiIndicator:
+    """Small Wi-Fi signal indicator in the title bar.
+
+    The widget intentionally stays invisible when no Wi-Fi signal is known, so
+    devices without a wireless adapter keep the original title bar layout.
+    """
+
+    def __init__(self, canvas, x=WIFI_X, y=WIFI_Y):
+        self._canvas = canvas
+        self._x = x
+        self._y = y
+        self._quality = None
+        self._showing = False
+        self._destroyed = False
+        self._tag = createTag(self, 'wifi')
+
+    def setSignal(self, quality):
+        """Set signal quality.
+
+        Args:
+            quality: ``None``/negative hides the icon. Values 0-100 map to
+                one, two or three bars.
+        """
+        if quality is None:
+            self._quality = None
+        else:
+            try:
+                self._quality = max(0, min(100, int(quality)))
+            except (TypeError, ValueError):
+                self._quality = None
+        if self._showing:
+            self._draw()
+
+    def show(self):
+        if self._destroyed:
+            return
+        self._showing = True
+        self._draw()
+
+    def hide(self):
+        self._showing = False
+        self._delete_all()
+
+    def destroy(self):
+        self._destroyed = True
+        self._showing = False
+        self._delete_all()
+
+    def isDestroy(self):
+        return self._destroyed
+
+    def isShowing(self):
+        return self._showing
+
+    def _delete_all(self):
+        self._canvas.delete(self._tag)
+
+    def _bar_count(self):
+        if self._quality is None:
+            return 0
+        if self._quality >= 67:
+            return 3
+        if self._quality >= 34:
+            return 2
+        return 1
+
+    def _draw(self):
+        self._delete_all()
+        if not self._showing:
+            return
+        count = self._bar_count()
+        if count <= 0:
+            return
+
+        baseline = self._y + max(WIFI_BAR_H)
+        for idx in range(count):
+            h = WIFI_BAR_H[idx]
+            x0 = self._x + idx * (WIFI_BAR_W + WIFI_BAR_GAP)
+            self._canvas.create_rectangle(
+                x0, baseline - h,
+                x0 + WIFI_BAR_W, baseline,
+                fill=WIFI_COLOR,
+                outline=WIFI_COLOR,
+                width=0,
+                tags=self._tag,
             )
 
 

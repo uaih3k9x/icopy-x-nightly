@@ -184,6 +184,14 @@ BATTERY_COLOR_CHARGING = '#00FF00'  # green while charging
 BATTERY_THRESHOLD_HIGH = 50
 BATTERY_THRESHOLD_LOW = 20
 
+# Wi-Fi signal indicator, shown immediately left of the battery bar.
+WIFI_X = 190
+WIFI_Y = 15
+WIFI_BAR_W = 3
+WIFI_BAR_GAP = 2
+WIFI_BAR_H = (4, 8, 12)
+WIFI_COLOR = 'white'
+
 # ═══════════════════════════════════════════════════
 # TOAST                                        [SPEC §5.5, API, WID]
 # ═══════════════════════════════════════════════════
