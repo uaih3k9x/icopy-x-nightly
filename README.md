@@ -1,3 +1,37 @@
+# uaih3k9x's iCopy-X Experimental Toolkit
+
+> **注意：这是一个非常激进、完全不稳定的个人实验工具包。**
+>
+> 这个仓库不是上游稳定版，也不是面向普通用户的发行分支。这里会包含我正在测试的
+> iCopy-X 工具、插件、模拟器、诊断功能、中文界面、更新器修复、dump/diff 实验、
+> 以及其他可能还没有充分验证的改动。
+>
+> **请默认认为这里的东西会坏、会变、会需要重刷。** 如果你只是想要稳定版本，请优先
+> 使用上游项目或正式 release。这个仓库更适合愿意协助测试、反馈问题、提出需求的人。
+>
+> 当某个功能在真实设备和模拟器里都验证到足够稳定之后，我会尽量把它拆成小的、
+> 可 review 的改动，PR 回上游仓库。
+>
+> 欢迎提需求、开 issue、给测试结果，尤其欢迎提供真实设备日志、dump 文件结构、
+> 更新失败截图、插件需求和复现步骤。
+
+## English Summary
+
+This is **uaih3k9x's aggressive experimental iCopy-X toolkit fork**.
+
+It is not a stable upstream release. Expect breaking changes, unfinished
+plugins, experimental updater behavior, emulator work, diagnostic tools,
+Chinese UI experiments, dump/diff tooling, and other in-progress changes.
+
+If a feature becomes stable after emulator and real-device testing, I will try
+to split it into small reviewable patches and submit it back upstream. Issues,
+feature requests, logs, dump samples, and reproducible test cases are welcome.
+
+Use this fork at your own risk. Prefer no-flash builds unless you know exactly
+why you need a flash build.
+
+---
+
 # iCopy-X Open
 An Open-Source version of the iCopy-X RFID Cloner device.
 
