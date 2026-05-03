@@ -71,7 +71,7 @@ def search(path):
         path: directory to search (e.g. '/mnt/upan/')
 
     Returns:
-        str path to first .ipk found, or None if none found
+        str path to newest non-hidden .ipk found, or None if none found
     """
     global _found_ipk
     _found_ipk = None
@@ -81,18 +81,41 @@ def search(path):
         return None
 
     try:
+        candidates = []
         for entry in sorted(os.listdir(path)):
-            if entry.lower().endswith(_IPK_EXTENSION):
-                full_path = os.path.join(path, entry)
-                if os.path.isfile(full_path):
-                    _found_ipk = full_path
-                    logger.info("update.search: found %s", full_path)
-                    return full_path
+            if not entry.lower().endswith(_IPK_EXTENSION):
+                continue
+            if _is_ignored_ipk_entry(entry):
+                logger.info("update.search: ignored metadata IPK %s", entry)
+                continue
+
+            full_path = os.path.join(path, entry)
+            if os.path.isfile(full_path):
+                candidates.append(full_path)
+
+        if candidates:
+            candidates.sort(
+                key=lambda p: (os.path.getmtime(p), os.path.basename(p)),
+                reverse=True,
+            )
+            _found_ipk = candidates[0]
+            logger.info("update.search: found %s", _found_ipk)
+            return _found_ipk
     except OSError as e:
         logger.error("update.search error: %s", e)
 
     logger.debug("update.search: no .ipk found in %s", path)
     return None
+
+
+def _is_ignored_ipk_entry(entry):
+    """Return True for host metadata files that must not be installed.
+
+    macOS creates AppleDouble sidecar files such as ``._update.ipk`` on
+    FAT/exFAT volumes.  The original first-match search can pick that sidecar
+    before the real package and fail checkPkg with 0x05.
+    """
+    return entry.startswith('.')
 
 
 def checkPkg():
