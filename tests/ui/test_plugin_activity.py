@@ -212,6 +212,87 @@ class TestStateTransitions:
 
 
 # =====================================================================
+# TestScrollableText
+# =====================================================================
+
+class TestScrollableText:
+    """Scrollable plugin text pages use UP/DOWN when keys are unbound."""
+
+    def test_up_down_scrolls_scrollable_text_output(self):
+        ui = {
+            'initial_state': 'main',
+            'states': {
+                'main': {
+                    'screen': {
+                        'title': 'Output',
+                        'content': {
+                            'type': 'text',
+                            'scrollable': True,
+                            'page_size': 3,
+                            'lines': [
+                                {'text': 'Line 0\nLine 1\nLine 2\nLine 3\nLine 4'},
+                            ],
+                        },
+                        'buttons': {'left': 'Back', 'right': None},
+                        'keys': {'M1': 'finish'},
+                    },
+                },
+            },
+        }
+
+        act = _start_plugin(ui=ui)
+        canvas = act.getCanvas()
+        assert 'Line 0' in canvas.get_all_text()
+        assert 'Line 3' not in canvas.get_all_text()
+
+        act.callKeyEvent(KEY_DOWN)
+        texts = canvas.get_all_text()
+        assert act._text_scroll_state['main'] == 1
+        assert 'Line 0' not in texts
+        assert 'Line 1' in texts
+        assert 'Line 3' in texts
+
+        act.callKeyEvent(KEY_UP)
+        texts = canvas.get_all_text()
+        assert act._text_scroll_state['main'] == 0
+        assert 'Line 0' in texts
+        assert 'Line 3' not in texts
+
+    def test_explicit_up_down_binding_wins_over_default_text_scroll(self):
+        ui = {
+            'initial_state': 'main',
+            'states': {
+                'main': {
+                    'screen': {
+                        'title': 'Output',
+                        'content': {
+                            'type': 'text',
+                            'scrollable': True,
+                            'page_size': 2,
+                            'lines': [{'text': 'Line 0\nLine 1\nLine 2'}],
+                        },
+                        'buttons': {'left': 'Back', 'right': None},
+                        'keys': {'DOWN': 'set_state:other'},
+                    },
+                },
+                'other': {
+                    'screen': {
+                        'title': 'Other',
+                        'content': {'type': 'text', 'lines': [{'text': 'Other'}]},
+                        'buttons': {'left': 'Back', 'right': None},
+                    },
+                },
+            },
+        }
+
+        act = _start_plugin(ui=ui)
+        act.callKeyEvent(KEY_DOWN)
+
+        assert act._current_state_id == 'other'
+        assert act._text_scroll_state.get('main', 0) == 0
+
+
+# =====================================================================
 # TestSoftkeyRendering
 # =====================================================================
 

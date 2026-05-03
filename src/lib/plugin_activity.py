@@ -106,6 +106,7 @@ class PluginActivity(BaseActivity):
         self._screens = {}            # state_id -> state definition dict
         self._screen_stack = []       # internal screen stack for push/pop
         self._list_state = {}         # per-screen list state: screen_id -> {selected, scroll_offset}
+        self._text_scroll_state = {}  # per-screen text scroll offsets
         self._permissions = []
         self._entry_class = None
         self._bg_lock = threading.Lock()
@@ -240,6 +241,12 @@ class PluginActivity(BaseActivity):
         action = keys_map.get(key)
         if action is not None:
             self._execute_action(action)
+            return
+
+        if key == KEY_UP and self._handle_text_scroll(-1):
+            return
+        if key == KEY_DOWN and self._handle_text_scroll(1):
+            return
 
     # ------------------------------------------------------------------
     # Action dispatch
@@ -349,6 +356,7 @@ class PluginActivity(BaseActivity):
             return
 
         self._current_state_id = state_id
+        self._text_scroll_state[state_id] = 0
         self._render_current_screen()
         self._execute_on_enter(state_id)
 
@@ -394,6 +402,7 @@ class PluginActivity(BaseActivity):
 
         # Inject list state (selected index, scroll offset) into content
         screen = self._inject_list_state(screen)
+        screen = self._inject_text_scroll_state(screen)
 
         # Resolve title
         title = screen.get('title')
@@ -466,6 +475,27 @@ class PluginActivity(BaseActivity):
             content['selected'] = saved.get('selected', 0)
             content['scroll_offset'] = saved.get('scroll_offset', 0)
             screen['content'] = content
+        return screen
+
+    def _inject_text_scroll_state(self, screen):
+        """Inject persisted text scroll offset into scrollable text content."""
+        content = screen.get('content', {})
+        if content.get('type') != 'text' or not content.get('scrollable'):
+            return screen
+
+        state_id = self._current_state_id
+        page_size = self._text_page_size(content)
+        total_lines = self._text_line_count(content)
+        max_offset = max(0, total_lines - page_size)
+        offset = self._text_scroll_state.get(state_id, 0)
+        offset = max(0, min(offset, max_offset))
+        self._text_scroll_state[state_id] = offset
+
+        screen = dict(screen)
+        content = dict(content)
+        content['scroll_offset'] = offset
+        content.setdefault('page_size', page_size)
+        screen['content'] = content
         return screen
 
     def _show_screen_toast(self, toast_def):
@@ -559,6 +589,86 @@ class PluginActivity(BaseActivity):
         action = item.get('action')
         if action:
             self._execute_action(action)
+
+    # ------------------------------------------------------------------
+    # Scrollable text handling
+    # ------------------------------------------------------------------
+
+    def _handle_text_scroll(self, n):
+        """Scroll output text when the current screen opts into it.
+
+        Explicit JSON key bindings still win; this is only used as the
+        default UP/DOWN behavior for ``content.scrollable: true`` text pages.
+        """
+        state_def = self._screens.get(self._current_state_id)
+        if state_def is None:
+            return False
+
+        screen = state_def.get('screen', state_def)
+        content = screen.get('content', {})
+        if content.get('type') != 'text' or not content.get('scrollable'):
+            return False
+
+        page_size = self._text_page_size(content)
+        total_lines = self._text_line_count(content)
+        max_offset = max(0, total_lines - page_size)
+        if max_offset <= 0:
+            return True
+
+        state_id = self._current_state_id
+        offset = self._text_scroll_state.get(state_id, 0)
+        new_offset = max(0, min(offset + n, max_offset))
+        if new_offset != offset:
+            self._text_scroll_state[state_id] = new_offset
+            self._render_current_screen()
+        return True
+
+    def _text_line_count(self, content):
+        """Return the number of logical lines after placeholder expansion."""
+        return len(self._expanded_text_lines(content))
+
+    def _expanded_text_lines(self, content):
+        lines = []
+        for line_def in content.get('lines', []):
+            if isinstance(line_def, str):
+                text = line_def
+            else:
+                text = line_def.get('text', '')
+            if self._renderer is not None:
+                text = self._renderer.resolve(text)
+            if text is None:
+                text = ''
+            for sub_line in str(text).split('\n'):
+                lines.append(sub_line)
+        return lines
+
+    def _text_page_size(self, content):
+        """Estimate how many normal text rows fit in the content area."""
+        try:
+            explicit = int(content.get('page_size', 0))
+            if explicit > 0:
+                return explicit
+        except (TypeError, ValueError):
+            pass
+
+        size = 'normal'
+        lines = content.get('lines', [])
+        if lines:
+            first = lines[0]
+            if isinstance(first, dict):
+                size = first.get('size', 'normal')
+        line_heights = {'normal': 16, 'large': 19, 'xlarge': 34}
+        line_h = line_heights.get(size, 16)
+
+        try:
+            top = int(content.get('y', CONTENT_Y0 + 10))
+        except (TypeError, ValueError):
+            top = CONTENT_Y0 + 10
+        try:
+            bottom = int(content.get('bottom', BTN_BAR_Y0 - 4))
+        except (TypeError, ValueError):
+            bottom = BTN_BAR_Y0 - 4
+        return max(1, (bottom - top) // line_h)
 
     # ------------------------------------------------------------------
     # Screen stack (push/pop within plugin screens)
