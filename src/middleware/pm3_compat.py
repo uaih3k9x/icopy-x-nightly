@@ -181,6 +181,13 @@ def _reverse_mf_fchk(m):
     return 'hf mf fchk %s %s' % (sp, m.group(2))
 
 
+def _reverse_mf_eload(m):
+    """hf mf eload --1k -f {file} -> hf mf eload 1 {file}."""
+    size_map = {'--mini': '0', '--1k': '1', '--2k': '2', '--4k': '4'}
+    sp = size_map.get(m.group(1), '1')
+    return 'hf mf eload %s %s' % (sp, m.group(2))
+
+
 def _reverse_mf_nested(m):
     """hf mf nested --size --blk {blk} -a/-b -k {key} --tblk {tblk} --ta/--tb
     -> hf mf nested o {blk} A/B {key} {tblk} A/B
@@ -528,6 +535,9 @@ _COMMAND_TRANSLATION_RULES = [] if not LEGACY_COMPAT else [
     (re.compile(r'^hf 14a sim\s+-t\s+(\S+)\s+(?:--uid|-u)\s+(\S+)$'),
      r'hf 14a sim t \1 u \2'),
 
+    # MIFARE Classic dump simulation: load emulator memory and simulate it.
+    (re.compile(r'^hf mf eload\s+(--mini|--1k|--2k|--4k)\s+-f\s+(\S+)$'),
+     _reverse_mf_eload),
     # hf mf csave --1k -f {file} -> hf mf csave 1 o {file}
     # hf mf csave --4k -f {file} -> hf mf csave 4 o {file}
     (re.compile(r'^hf mf csave\s+--1k\s+-f\s+(\S+)$'), r'hf mf csave 1 o \1'),

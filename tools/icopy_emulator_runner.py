@@ -54,7 +54,7 @@ def _read_keys(key_file):
                             print('[WEBKEY] ignored %s' % key, flush=True)
                             continue
                         try:
-                            import keymap
+                            from lib import keymap
                             keymap.key.onKey(key)
                             print('[WEBKEY] %s' % key, flush=True)
                         except Exception as exc:

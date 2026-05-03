@@ -188,3 +188,29 @@ def setScreenMirror(value):
         value: int 0=disabled, 1=enabled
     """
     config.setKeyValue('screen_mirror', str(int(value)))
+
+
+def getLanguage():
+    """Get UI language code.
+
+    Returns:
+        str: 'en' or 'zh' (default 'en')
+    """
+    val = str(config.getValue('language', 'en') or 'en').strip().lower()
+    if val in ('zh', 'cn', '1', 'chinese'):
+        return 'zh'
+    return 'en'
+
+
+def setLanguage(value):
+    """Persist UI language code.
+
+    Args:
+        value: 'en'/'zh' or equivalent truthy language value.
+    """
+    val = str(value or 'en').strip().lower()
+    if val in ('zh', 'cn', '1', 'chinese'):
+        code = 'zh'
+    else:
+        code = 'en'
+    config.setKeyValue('language', code)

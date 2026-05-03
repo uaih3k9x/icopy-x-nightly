@@ -40,11 +40,39 @@ Original Cython source path (embedded in .so):
 Cython version: 0.29.21
 """
 
+import os
 import platform as _platform
 
 # Module-level state
 _root = None
 _window_config = None
+
+def _language_id_from_value(value):
+    value = str(value or '').strip().lower()
+    if value.startswith(('zh', 'cn')) or value in ('1', 'chinese'):
+        return 1
+    return 0
+
+
+def _configured_language():
+    """Return language from dev override, persisted settings, or locale."""
+    env_lang = os.environ.get('ICOPY_LANG')
+    if env_lang:
+        return env_lang
+    try:
+        import settings as _settings
+    except ImportError:
+        try:
+            from lib import settings as _settings
+        except ImportError:
+            _settings = None
+    if _settings is not None:
+        try:
+            return _settings.getLanguage()
+        except Exception:
+            pass
+    return os.environ.get('LANGUAGE', '')
+
 
 def setWindows(window=None):
     """Configure window properties before startApp().
@@ -101,6 +129,12 @@ def startApp():
     """
     global _root
     import tkinter
+    from lib import resources
+
+    try:
+        resources.setLanguage(_language_id_from_value(_configured_language()))
+    except Exception:
+        pass
 
     # ── 1. Create & configure root window ──────────────────────────
     root = tkinter.Tk()
@@ -114,8 +148,10 @@ def startApp():
         cfg.get('resizable', False),
     )
 
-    # Default font — original .so uses 'mononoki'
-    font = cfg.get('font', 'mononoki')
+    # Default font — original .so uses 'mononoki'.  Chinese mode switches
+    # to the bundled WQY monospace font so CJK glyphs render on-device.
+    default_font = resources.get_font(13).rsplit(' ', 1)[0]
+    font = cfg.get('font', default_font)
     root.option_add('*Font', font)
 
     # Tk scaling factor (original reads from config module on Windows)
@@ -129,13 +165,13 @@ def startApp():
         root.configure(cursor=cursor)
 
     # ── 2. Initialise activity stack ───────────────────────────────
-    import actstack
+    from lib import actstack
     actstack.init(root)
 
     # ── 2b. Discover plugins ──────────────────────────────────────
     # Must run before MainActivity is created so that the main menu
     # includes promoted plugin entries and the "Plugins" submenu.
-    import actmain
+    from lib import actmain
     try:
         actmain.init_plugins()
     except Exception:
@@ -148,7 +184,7 @@ def startApp():
     # The original application.so patches the activity stack so that
     # every start/finish automatically re-binds keymap.key to the
     # current top activity.  Reproducing that here.
-    import keymap
+    from lib import keymap
 
     def _update_key_target():
         """Set keymap target to the current top-of-stack activity."""
@@ -199,7 +235,7 @@ def startApp():
     # ── 6. Start screen mirror service if configured ────────────────
     try:
         import settings
-        if settings.getScreenMirror():
+        if settings.getScreenMirror() and os.environ.get('ICOPY_EMULATOR') != '1':
             from lib.mirror_service import get_service
             get_service().start()
     except Exception:

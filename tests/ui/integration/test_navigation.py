@@ -52,6 +52,7 @@ def _collect_all_activity_classes():
         WarningM1Activity,
         AutoCopyActivity,
         SimulationActivity,
+        MifareDumpSimulationActivity,
         SimulationTraceActivity,
         CardWalletActivity,
         KeyEnterM1Activity,
@@ -87,6 +88,7 @@ def _collect_all_activity_classes():
         WarningM1Activity,
         AutoCopyActivity,
         SimulationActivity,
+        MifareDumpSimulationActivity,
         SimulationTraceActivity,
         CardWalletActivity,
         KeyEnterM1Activity,
@@ -197,9 +199,13 @@ class TestFullStackBoot:
         texts = canvas.get_all_text()
         assert "Main Page" in texts
 
-        # 14 items in ListView
+        # Stock menu plus Settings. Plugin entries may add more items.
         assert main_activity.lv_main_page is not None
-        assert len(main_activity.lv_main_page._items) == 14
+        action_keys = [item[2] for item in main_activity._menu_items]
+        expected_keys = [item[1] for item in MENU_EXPECTED]
+        assert action_keys[:len(expected_keys)] == expected_keys
+        assert 'settings_menu' in action_keys
+        assert len(main_activity.lv_main_page._items) >= len(expected_keys) + 1
 
         # Main menu has no M2 button label (setRightButton(""))
         # Verify menu items are visible instead

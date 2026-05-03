@@ -53,6 +53,12 @@ class MockSettings:
     def setVolume(self, level):
         self._config.setKeyValue('volume', level)
 
+    def fromLevelGetVolume(self, level):
+        values = [0, 20, 50, 100]
+        if 0 <= int(level) < len(values):
+            return values[int(level)]
+        return 50
+
 
 class MockAudio:
     """Mock audio.so -- records all method calls."""
@@ -63,8 +69,8 @@ class MockAudio:
     def setVolume(self, v):
         self.calls.append(('setVolume', v))
 
-    def playVolumeExam(self):
-        self.calls.append(('playVolumeExam',))
+    def playVolumeExam(self, v=None):
+        self.calls.append(('playVolumeExam', v))
 
     def setKeyAudioEnable(self, enable):
         self.calls.append(('setKeyAudioEnable', enable))
@@ -104,6 +110,7 @@ def install_mocks(mock_config, mock_audio):
     settings_mod = types.ModuleType('settings')
     settings_mod.getVolume = mock_settings.getVolume
     settings_mod.setVolume = mock_settings.setVolume
+    settings_mod.fromLevelGetVolume = mock_settings.fromLevelGetVolume
 
     audio_mod = types.ModuleType('audio')
     audio_mod.setVolume = mock_audio.setVolume
@@ -213,8 +220,8 @@ class TestVolumeActivity:
         # Verify saved
         assert mock_config._store['volume'] == 3
         # Verify audio calls
-        assert ('setVolume', 3) in mock_audio.calls
-        assert ('playVolumeExam',) in mock_audio.calls
+        assert ('setVolume', 100) in mock_audio.calls
+        assert ('playVolumeExam', 100) in mock_audio.calls
         assert ('setKeyAudioEnable', True) in mock_audio.calls
         # Activity should still be alive
         assert not act.life.destroyed

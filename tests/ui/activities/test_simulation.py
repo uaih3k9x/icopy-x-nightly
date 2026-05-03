@@ -37,6 +37,11 @@ def _create_trace(bundle=None):
     return actstack.start_activity(SimulationTraceActivity, bundle)
 
 
+def _create_mfc_dump_sim(bundle=None):
+    from activity_main import MifareDumpSimulationActivity
+    return actstack.start_activity(MifareDumpSimulationActivity, bundle)
+
+
 class TestSimulationActivity:
     """SimulationActivity unit tests -- 20 scenarios."""
 
@@ -253,3 +258,32 @@ class TestSimulationTraceActivity:
         act = _create_trace()
         act.onKeyEvent(KEY_M1)
         assert act.life.destroyed
+
+
+class TestMifareDumpSimulationActivity:
+    """Full MIFARE Classic dump simulation entrypoint."""
+
+    def test_rejects_unsupported_size(self, tmp_path):
+        path = tmp_path / 'bad.bin'
+        path.write_bytes(b'\x00' * 17)
+
+        act = _create_mfc_dump_sim(str(path))
+
+        assert act._size_code is None
+        assert act._file_path == str(path)
+
+    def test_accepts_1k_dump(self, tmp_path):
+        path = tmp_path / 'M1-1K-4B_AABBCCDD_1.bin'
+        path.write_bytes(b'\x00' * 1024)
+
+        act = _create_mfc_dump_sim(str(path))
+
+        assert act._size_code == '1'
+        assert act._size_label == '1K'
+
+    def test_mfc_dump_size_code_helper(self, tmp_path):
+        from activity_main import _mfc_dump_size_code
+        path = tmp_path / 'M1-4K-4B_AABBCCDD_1.bin'
+        path.write_bytes(b'\x00' * 4096)
+
+        assert _mfc_dump_size_code(str(path)) == ('4', '4K')

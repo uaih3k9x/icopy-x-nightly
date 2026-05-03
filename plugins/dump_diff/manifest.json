@@ -1,0 +1,9 @@
+{
+    "name": "Dump Diff",
+    "version": "1.0.0",
+    "author": "uaih3k9x",
+    "description": "Compare the two newest dump files in the selected dump directory",
+    "entry_class": "DumpDiffPlugin",
+    "permissions": ["filesystem"],
+    "order": 36
+}

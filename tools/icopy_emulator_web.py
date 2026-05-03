@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import shlex
 import subprocess
 import time
@@ -27,6 +28,8 @@ RUNNER = '/home/qx/icopy-x-reimpl/tools/icopy_emulator_runner.py'
 
 VALID_KEYS = {'UP', 'DOWN', 'LEFT', 'RIGHT', 'OK', 'M1', 'M2', 'PWR', 'ALL'}
 VALID_COMMANDS = {'RELOAD_PLUGINS'}
+VALID_DUMP_EXTS = ('.bin', '.eml', '.txt', '.json', '.pm3')
+DUMP_ROOT = '/mnt/upan/dump'
 
 
 def run_orb(command: str, *, root: bool = False, timeout: int = 15) -> subprocess.CompletedProcess:
@@ -45,6 +48,13 @@ def run_orb(command: str, *, root: bool = False, timeout: int = 15) -> subproces
 
 def shell_quote(value: str) -> str:
     return shlex.quote(value)
+
+
+def optional_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        return ''
+    return '%s=%s ' % (name, shell_quote(value))
 
 
 def ensure_xvfb() -> dict:
@@ -139,7 +149,8 @@ def start_emulator() -> dict:
         'cd {app}; '
         'nohup env PYTHONHOME={root}/usr/local/python-3.8.0 '
         'PYTHONPATH={app}:{app}/main:{app}/lib '
-        'ICOPY_APP_DIR={app} ICOPY_KEY_FILE={key_file} DISPLAY={display} '
+        'ICOPY_APP_DIR={app} ICOPY_KEY_FILE={key_file} {lang_env}'
+        'ICOPY_EMULATOR=1 DISPLAY={display} '
         '/usr/bin/qemu-arm -L {root} {python} {runner} '
         '>{log} 2>&1 < /dev/null & '
         'echo $!; sleep 4; '
@@ -149,6 +160,7 @@ def start_emulator() -> dict:
         app=shell_quote(APP),
         root=shell_quote(ROOT),
         key_file=shell_quote(KEY_FILE),
+        lang_env=optional_env('ICOPY_LANG'),
         display=shell_quote(DISPLAY),
         python=shell_quote(PYTHON),
         runner=shell_quote(RUNNER),
@@ -245,6 +257,79 @@ def get_log() -> dict:
     return result_dict(proc)
 
 
+def list_dumps() -> dict:
+    cmd = r'''
+python3 - <<'PY'
+import json
+import os
+
+root = '/mnt/upan/dump'
+valid = ('.bin', '.eml', '.txt', '.json', '.pm3')
+items = []
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+    for name in filenames:
+        if not name.lower().endswith(valid):
+            continue
+        path = os.path.join(dirpath, name)
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        items.append({
+            'path': path,
+            'name': name,
+            'type': os.path.relpath(dirpath, root).split(os.sep)[0],
+            'size': st.st_size,
+            'mtime': st.st_mtime,
+        })
+items.sort(key=lambda item: (item['type'], item['name']))
+print(json.dumps(items))
+PY
+'''
+    proc = run_orb(cmd, timeout=10)
+    data = result_dict(proc)
+    items = []
+    if data.get('ok') and data.get('stdout'):
+        try:
+            items = json.loads(data['stdout'])
+        except ValueError:
+            items = []
+    data['items'] = items
+    return data
+
+
+def _is_safe_dump_path(path: str) -> bool:
+    if not path:
+        return False
+    norm = os.path.normpath(path)
+    if not norm.startswith(DUMP_ROOT + '/'):
+        return False
+    if not norm.lower().endswith(VALID_DUMP_EXTS):
+        return False
+    return '..' not in norm.split('/')
+
+
+def diff_dumps(path_a: str, path_b: str) -> dict:
+    if not _is_safe_dump_path(path_a) or not _is_safe_dump_path(path_b):
+        return {'ok': False, 'error': 'invalid dump path'}
+    cmd = (
+        'cd /home/qx/icopy-x-reimpl && '
+        'python3 tools/dump_diff.py --json {a} {b}'
+    ).format(a=shell_quote(path_a), b=shell_quote(path_b))
+    proc = run_orb(cmd, timeout=20)
+    data = result_dict(proc)
+    try:
+        data['diff'] = json.loads(data.get('stdout') or '{}')
+    except ValueError:
+        data['diff'] = None
+    # tools/dump_diff.py exits 1 when files differ; that is still a
+    # successful web operation as long as JSON was returned.
+    if data.get('diff'):
+        data['ok'] = True
+    return data
+
+
 def result_dict(proc: subprocess.CompletedProcess) -> dict:
     return {
         'ok': proc.returncode == 0,
@@ -271,6 +356,7 @@ INDEX_HTML = r'''<!doctype html>
       --accent: #0b6f85;
       --accent2: #875300;
       --danger: #b42318;
+      --ok: #18794e;
       --shadow: 0 1px 2px rgba(20, 31, 43, .08);
     }
     * { box-sizing: border-box; }
@@ -369,6 +455,52 @@ INDEX_HTML = r'''<!doctype html>
       background: #fbfcfd;
     }
     .toolbar button { padding: 0 12px; }
+    .diff-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+    }
+    select {
+      width: 100%;
+      min-width: 0;
+      height: 36px;
+      border: 1px solid #bdc7d1;
+      border-radius: 7px;
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      padding: 0 8px;
+    }
+    .diff-summary {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      background: #fbfcfd;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px;
+      min-height: 54px;
+      background: #fff;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .metric strong {
+      display: block;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+    .ok { color: var(--ok); }
     .statusbar {
       padding: 10px 14px;
       color: var(--muted);
@@ -399,6 +531,8 @@ INDEX_HTML = r'''<!doctype html>
     @media (max-width: 760px) {
       .wrap { grid-template-columns: 1fr; }
       .screen-box { justify-items: center; }
+      .diff-grid { grid-template-columns: 1fr; }
+      .diff-summary { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
@@ -439,6 +573,17 @@ INDEX_HTML = r'''<!doctype html>
         <button onclick="action('stop')" class="danger">Stop</button>
         <button onclick="action('start')">Start</button>
       </div>
+      <div class="diff-grid">
+        <select id="diffA"></select>
+        <select id="diffB"></select>
+        <button onclick="runDiff()">Diff</button>
+      </div>
+      <div class="diff-summary" id="diffSummary">
+        <div class="metric"><span>Status</span><strong>no diff</strong></div>
+        <div class="metric"><span>Changed</span><strong>-</strong></div>
+        <div class="metric"><span>First</span><strong>-</strong></div>
+        <div class="metric"><span>Groups</span><strong>-</strong></div>
+      </div>
       <pre id="log"></pre>
     </section>
   </main>
@@ -447,6 +592,9 @@ INDEX_HTML = r'''<!doctype html>
     const log = document.getElementById('log');
     const statusEl = document.getElementById('status');
     const auto = document.getElementById('auto');
+    const diffA = document.getElementById('diffA');
+    const diffB = document.getElementById('diffB');
+    const diffSummary = document.getElementById('diffSummary');
 
     async function api(path, body) {
       const opts = body ? {
@@ -473,6 +621,75 @@ INDEX_HTML = r'''<!doctype html>
         stamp(data.ok ? 'ready' : 'command failed');
       } catch (e) {
         stamp('refresh failed: ' + e);
+      }
+    }
+
+    function shortPath(item) {
+      const type = item.type || '?';
+      return `${type}/${item.name} (${item.size}B)`;
+    }
+
+    async function loadDumps() {
+      const data = await api('/api/dumps');
+      const items = data.items || [];
+      for (const sel of [diffA, diffB]) {
+        const current = sel.value;
+        sel.innerHTML = '';
+        for (const item of items) {
+          const opt = document.createElement('option');
+          opt.value = item.path;
+          opt.textContent = shortPath(item);
+          sel.appendChild(opt);
+        }
+        if (current) sel.value = current;
+      }
+      if (items.length >= 2 && !diffA.value && !diffB.value) {
+        diffA.value = items[items.length - 2].path;
+        diffB.value = items[items.length - 1].path;
+      }
+    }
+
+    function fmtOffset(value) {
+      if (value === null || value === undefined) return 'n/a';
+      return '0x' + Number(value).toString(16).toUpperCase();
+    }
+
+    function fmtGroups(diff) {
+      const g = diff.grouping || {};
+      if (g.unit === 'mfc-block') {
+        return `${g.block_count || 0} blocks / ${g.sector_count || 0} sectors`;
+      }
+      if (g.unit === 'mfu-page') {
+        return `${g.page_count || 0} pages`;
+      }
+      return `${diff.range_count || 0} ranges`;
+    }
+
+    function renderDiff(diff) {
+      if (!diff) return;
+      const status = diff.equal ? '<span class="ok">equal</span>' : '<span class="danger">different</span>';
+      diffSummary.innerHTML = `
+        <div class="metric"><span>Status</span><strong>${status}</strong></div>
+        <div class="metric"><span>Changed</span><strong>${diff.changed_bytes} byte(s)</strong></div>
+        <div class="metric"><span>First</span><strong>${fmtOffset(diff.first_diff_offset)}</strong></div>
+        <div class="metric"><span>Groups</span><strong>${fmtGroups(diff)}</strong></div>
+      `;
+      log.textContent = JSON.stringify(diff, null, 2);
+    }
+
+    async function runDiff() {
+      if (!diffA.value || !diffB.value) {
+        stamp('select two dumps');
+        return;
+      }
+      stamp('diff...');
+      const data = await api('/api/diff', {a: diffA.value, b: diffB.value});
+      if (data.diff) {
+        renderDiff(data.diff);
+        stamp('diff ready');
+      } else {
+        log.textContent = JSON.stringify(data, null, 2);
+        stamp('diff failed');
       }
     }
 
@@ -514,6 +731,7 @@ INDEX_HTML = r'''<!doctype html>
     });
 
     setInterval(() => { if (auto.checked) refresh(); }, 1200);
+    loadDumps();
     refresh();
   </script>
 </body>
@@ -546,6 +764,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(get_status())
         elif path == '/api/log':
             self._json(get_log())
+        elif path == '/api/dumps':
+            self._json(list_dumps())
         else:
             self.send_error(404)
 
@@ -568,6 +788,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(stop_emulator())
         elif path == '/api/reload_plugins':
             self._json(reload_plugins())
+        elif path == '/api/diff':
+            self._json(diff_dumps(str(body.get('a', '')), str(body.get('b', ''))))
         elif path == '/api/refresh':
             self._json(get_status())
         else:

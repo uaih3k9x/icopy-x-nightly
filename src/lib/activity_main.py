@@ -58,6 +58,7 @@ from lib._constants import (
     CONTENT_H,
     LIST_ITEM_H,
     NORMAL_TEXT_COLOR,
+    SELECT_BG,
     COLOR_ACCENT,
     COLOR_BLACK,
     KEY_UP,
@@ -454,12 +455,11 @@ class VolumeActivity(BaseActivity):
 # ═══════════════════════════════════════════════════════════════════════
 
 class SettingsMenuActivity(BaseActivity):
-    """Settings menu with image-based toggle items.
+    """Settings menu with toggle and choice items.
 
-    Currently contains: Mirror Screen? toggle.
-    Layout: label text on the left, enabled/disabled icon on the right.
-    OK key toggles the current item. PWR exits.
-    Uses res/img/enabled.png and res/img/disabled.png for toggle state.
+    Contains screen mirroring and UI language settings.
+    Layout: label text on the left, state/value on the right.
+    OK/M2 toggles the current item. UP/DOWN changes selection. PWR exits.
     """
 
     ACT_NAME = 'settings_menu'
@@ -471,7 +471,10 @@ class SettingsMenuActivity(BaseActivity):
 
     def __init__(self, bundle=None):
         self._mirror_state = False
-        self._tk_img = None  # prevent GC of PhotoImage
+        self._language = 'en'
+        self._selection = 0
+        self._items = ('screen_mirror', 'language')
+        self._tk_imgs = {}  # prevent GC of PhotoImage objects
         super().__init__(bundle)
 
     def _load_toggle_image(self, enabled):
@@ -498,57 +501,136 @@ class SettingsMenuActivity(BaseActivity):
         if canvas is None:
             return
 
-        # Load current state
+        self._load_state()
+        self._draw_settings()
+
+    def _load_state(self):
+        """Load current persisted settings."""
         try:
             import settings as _settings
             self._mirror_state = bool(_settings.getScreenMirror())
         except Exception:
             self._mirror_state = False
+        try:
+            import settings as _settings
+            self._language = _settings.getLanguage()
+        except Exception:
+            self._language = 'zh' if resources.getLanguage() == 1 else 'en'
+        if self._language not in ('en', 'zh'):
+            self._language = 'en'
 
-        # Draw label — left-aligned, first item row
-        item_y = CONTENT_Y0 + LIST_ITEM_H // 2
+    def _draw_settings(self):
+        """Redraw all settings rows."""
+        canvas = self.getCanvas()
+        if canvas is None:
+            return
+        canvas.delete('settings_row')
+        canvas.delete('settings_label')
+        canvas.delete('settings_value')
+        self._tk_imgs.clear()
+        self.setTitle(resources.get_str('settings'))
+
+        for idx, item in enumerate(self._items):
+            self._draw_row(idx, item)
+
+    def _draw_row(self, idx, item):
+        canvas = self.getCanvas()
+        if canvas is None:
+            return
+        y0 = CONTENT_Y0 + idx * LIST_ITEM_H
+        y_mid = y0 + LIST_ITEM_H // 2
+        if idx == self._selection:
+            canvas.create_rectangle(
+                0, y0, SCREEN_W, y0 + LIST_ITEM_H,
+                fill=SELECT_BG, outline=SELECT_BG,
+                tags='settings_row',
+            )
+
+        label_key = 'screen_mirroring' if item == 'screen_mirror' else 'language'
         canvas.create_text(
-            15, item_y,
-            text=resources.get_str('screen_mirroring'),
+            15, y_mid,
+            text=resources.get_str(label_key),
             fill=NORMAL_TEXT_COLOR,
             font=resources.get_font(14),
             anchor='w',
             tags='settings_label',
         )
 
-        # Draw toggle image on right side
-        self._draw_toggle()
+        if item == 'screen_mirror':
+            self._draw_toggle(idx)
+        elif item == 'language':
+            text = resources.get_str(
+                'chinese' if self._language == 'zh' else 'english')
+            canvas.create_text(
+                SCREEN_W - 15, y_mid,
+                text=text,
+                fill=COLOR_ACCENT,
+                font=resources.get_font(14),
+                anchor='e',
+                tags='settings_value',
+            )
 
-    def _draw_toggle(self):
+    def _draw_toggle(self, idx=0):
         """Draw the toggle icon based on current state."""
         canvas = self.getCanvas()
         if canvas is None:
             return
-        canvas.delete('settings_toggle')
-        self._tk_img = self._load_toggle_image(self._mirror_state)
-        if self._tk_img is not None:
-            toggle_x = SCREEN_W - 15
-            toggle_y = CONTENT_Y0 + LIST_ITEM_H // 2
+        toggle_x = SCREEN_W - 15
+        toggle_y = CONTENT_Y0 + idx * LIST_ITEM_H + LIST_ITEM_H // 2
+        img = self._load_toggle_image(self._mirror_state)
+        if img is not None:
+            self._tk_imgs[idx] = img
             canvas.create_image(
                 toggle_x, toggle_y,
-                image=self._tk_img,
+                image=img,
                 anchor='e',
-                tags='settings_toggle',
+                tags='settings_value',
+            )
+        else:
+            text = resources.get_str('yes' if self._mirror_state else 'no')
+            canvas.create_text(
+                toggle_x, toggle_y,
+                text=text,
+                fill=COLOR_ACCENT,
+                font=resources.get_font(14),
+                anchor='e',
+                tags='settings_value',
             )
 
     def onKeyEvent(self, key):
-        if key == KEY_OK:
+        if key == KEY_UP:
+            self._selection = (self._selection - 1) % len(self._items)
+            self._draw_settings()
+        elif key == KEY_DOWN:
+            self._selection = (self._selection + 1) % len(self._items)
+            self._draw_settings()
+        elif key in (KEY_OK, KEY_M2):
+            self._toggle_current()
+        elif key == KEY_M1:
+            self.finish()
+        elif key == KEY_PWR:
+            if self._handlePWR():
+                return
+            self.finish()
+
+    def _toggle_current(self):
+        current = self._items[self._selection]
+        if current == 'screen_mirror':
             self._mirror_state = not self._mirror_state
             try:
                 import settings as _settings
                 _settings.setScreenMirror(1 if self._mirror_state else 0)
             except Exception:
                 pass
-            self._draw_toggle()
-        elif key == KEY_PWR:
-            if self._handlePWR():
-                return
-            self.finish()
+        elif current == 'language':
+            self._language = 'zh' if self._language == 'en' else 'en'
+            try:
+                import settings as _settings
+                _settings.setLanguage(self._language)
+            except Exception:
+                pass
+            resources.setLanguage(1 if self._language == 'zh' else 0)
+        self._draw_settings()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -643,7 +725,7 @@ class SleepModeActivity(BaseActivity):
 # ═══════════════════════════════════════════════════════════════════════
 
 class AboutActivity(BaseActivity):
-    """Device information display -- 2 pages (info + update instructions).
+    """Device information display.
 
     From actmain.so AboutActivity and UI mapping docs:
 
@@ -660,6 +742,9 @@ class AboutActivity(BaseActivity):
         - UP = page 0
         - PWR = finish
 
+    Page 2:
+        - Embedded scroller easter egg.
+
     Key handling:
         - M1: (empty label on page 0) -- navigate to previous page if not page 0
         - M2: checkUpdate() -> launch UpdateActivity
@@ -672,10 +757,13 @@ class AboutActivity(BaseActivity):
 
     def __init__(self, bundle=None):
         self._page_new = 0
-        self._page_max = 2  # 3 pages: 0, 1, and 2 (scroller easter egg)
+        self._page_max = 2
         self._btlv = None   # BigTextListView for content
         self._version_info = {}
         self._scroller = None
+        self._text_scroller_timer = None
+        self._text_scroller_index = 0
+        self._text_scroller_contributors = []
         super().__init__(bundle)
 
     def onCreate(self, bundle):
@@ -721,7 +809,7 @@ class AboutActivity(BaseActivity):
 
         Ground truth (QEMU 20260405):
         M1: no-op (buttons are hidden)
-        M2/OK: launch UpdateActivity (only from page 2, index 1)
+        M2/OK: launch UpdateActivity (only from the update page)
         PWR: finish
         UP: previous page
         DOWN: next page
@@ -816,6 +904,8 @@ class AboutActivity(BaseActivity):
 
         page_indicator = '%d/%d' % (self._page_new + 1, self._page_max + 1)
         ind_font = resources.get_font(ABOUT_PAGE_IND_FONT_SIZE)
+        if self._page_new >= 2 and self._toast is not None:
+            self._toast.cancel()
 
         if self._page_new <= 1:
             info = self._version_info
@@ -876,6 +966,12 @@ class AboutActivity(BaseActivity):
             return
         try:
             from lib.scroller import EmbeddedScroller
+        except ImportError as exc:
+            logger.warning("About scroller unavailable: %s", exc)
+            self._scroller = None
+            self._start_text_scroller()
+            return
+        try:
             self._scroller = EmbeddedScroller(actstack._root)
             canvas.create_window(
                 0, 0, window=self._scroller.canvas,
@@ -885,6 +981,8 @@ class AboutActivity(BaseActivity):
         except Exception:
             logger.exception("Failed to start about scroller")
             self._scroller = None
+            self._start_text_scroller()
+            return
         # Music is independent of the visual — start it even if the
         # scroller widget itself failed (no point silencing the song
         # because of a draw glitch).
@@ -893,6 +991,118 @@ class AboutActivity(BaseActivity):
             audio.startScrollerMusic(self._SCROLLER_OGG)
         except Exception:
             logger.exception("Failed to start scroller music")
+
+    def _start_text_scroller(self):
+        """Render the About easter egg as pure Canvas text.
+
+        QEMU and many stock rootfs images do not ship Pillow, so the sprite
+        scroller cannot be assumed to exist.  This keeps the hidden About page
+        useful without adding a native dependency to the noflash package.
+        """
+        self._text_scroller_index = 0
+        self._text_scroller_contributors = self._load_contributor_lines()
+        self._draw_text_scroller_frame()
+
+    def _load_contributor_lines(self):
+        here = os.path.dirname(__file__)
+        candidates = [
+            os.path.join(here, '..', 'res', 'about', 'contributors.txt'),
+            os.path.join(here, '..', '..', 'res', 'about', 'contributors.txt'),
+            os.path.join(os.getcwd(), 'res', 'about', 'contributors.txt'),
+        ]
+        path = None
+        for candidate in candidates:
+            candidate = os.path.normpath(candidate)
+            if os.path.isfile(candidate):
+                path = candidate
+                break
+
+        lines = []
+        if path is None:
+            return lines
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                for raw in fh:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    name, sep, count = raw.partition('`')
+                    if sep:
+                        lines.append('%-13s %s' % (name[:13], count))
+                    else:
+                        lines.append(raw[:24])
+                    if len(lines) >= 80:
+                        break
+        except OSError:
+            pass
+        return lines
+
+    def _draw_text_scroller_frame(self):
+        canvas = self.getCanvas()
+        if canvas is None:
+            return
+
+        canvas.delete('about_text_scroller')
+        canvas.create_rectangle(
+            0, 0, SCREEN_W, SCREEN_H,
+            fill='#151515', outline='#151515',
+            tags='about_text_scroller about_content',
+        )
+        canvas.create_text(
+            SCREEN_W // 2, 18,
+            text='iCopy-X Community',
+            fill='#FFFFFF',
+            font=resources.get_font_force_en(13),
+            anchor='center',
+            tags='about_text_scroller about_content',
+        )
+        contribs = self._text_scroller_contributors or [
+            'icopy-x-community',
+            'proxmark3 contributors',
+        ]
+        page_size = 8
+        if self._text_scroller_index >= len(contribs):
+            self._text_scroller_index = 0
+        chunk = contribs[
+            self._text_scroller_index:self._text_scroller_index + page_size]
+        if len(chunk) < page_size and len(contribs) > page_size:
+            chunk += contribs[:page_size - len(chunk)]
+
+        canvas.create_text(
+            SCREEN_W // 2, 58,
+            text='GREETINGS',
+            fill=COLOR_ACCENT,
+            font=resources.get_font_force_en(11),
+            anchor='center',
+            tags='about_text_scroller about_content',
+        )
+        canvas.create_text(
+            18, 82,
+            text='\n'.join(chunk),
+            fill='#F6F6F6',
+            font=resources.get_font_force_en(9),
+            anchor='nw',
+            width=SCREEN_W - 36,
+            tags='about_text_scroller about_content',
+        )
+
+        total = max(1, len(contribs))
+        canvas.create_text(
+            SCREEN_W // 2, SCREEN_H - 13,
+            text='%02d/%02d' % (self._text_scroller_index + 1, total),
+            fill='#8A8A8A',
+            font=resources.get_font_force_en(8),
+            anchor='center',
+            tags='about_text_scroller about_content',
+        )
+
+        self._text_scroller_index = (
+            self._text_scroller_index + page_size) % total
+        try:
+            self._text_scroller_timer = canvas.after(
+                1800, self._draw_text_scroller_frame)
+        except Exception:
+            self._text_scroller_timer = None
 
     def _stop_scroller(self):
         """Stop and destroy the embedded scroller + its music."""
@@ -904,6 +1114,18 @@ class AboutActivity(BaseActivity):
             audio.stopScrollerMusic()
         except Exception:
             pass
+        canvas = self.getCanvas()
+        if self._text_scroller_timer is not None and canvas is not None:
+            try:
+                canvas.after_cancel(self._text_scroller_timer)
+            except Exception:
+                pass
+        self._text_scroller_timer = None
+        if canvas is not None:
+            try:
+                canvas.delete('about_text_scroller')
+            except Exception:
+                pass
         if self._scroller is not None:
             self._scroller.stop()
             try:
@@ -911,6 +1133,10 @@ class AboutActivity(BaseActivity):
             except Exception:
                 pass
             self._scroller = None
+
+    def onDestroy(self):
+        self._stop_scroller()
+        super().onDestroy()
 
     def _check_update(self):
         """Launch UpdateActivity for firmware update.
@@ -6775,6 +7001,177 @@ class SimulationTraceActivity(BaseActivity):
             self.finish()
 
 
+MFC_DUMP_SIM_SIZE = {
+    320: ('0', 'Mini'),
+    1024: ('1', '1K'),
+    2048: ('2', '2K'),
+    4096: ('4', '4K'),
+}
+
+
+def _mfc_dump_size_code(path):
+    """Return (size_code, label) for a supported MFC dump file."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    return MFC_DUMP_SIM_SIZE.get(size)
+
+
+class MifareDumpSimulationActivity(BaseActivity):
+    """Simulate a MIFARE Classic dump from emulator memory.
+
+    This activity only loads PM3 emulator memory and starts simulation.  It
+    never writes to a physical card.  Unsupported file sizes are rejected
+    before any PM3 command is sent.
+    """
+
+    ACT_NAME = 'mfc_dump_sim'
+
+    def __init__(self, bundle=None):
+        self._file_path = None
+        self._size_code = None
+        self._size_label = None
+        self._toast = None
+        self._progress = None
+        self._sim_stopping = False
+        self._last_pm3_cmd = None
+        super().__init__(bundle)
+
+    def onCreate(self, bundle):
+        self.setTitle(resources.get_str('simulation'))
+        self.setLeftButton(resources.get_str('back'))
+        self.setRightButton(resources.get_str('start'))
+        canvas = self.getCanvas()
+        if canvas is None:
+            return
+        self._toast = Toast(canvas)
+        self._progress = ProgressBar(canvas)
+        self._progress.setMessage('MFC dump sim ready')
+        self._progress.setProgress(0)
+
+        if isinstance(bundle, dict):
+            self._file_path = bundle.get('file_path')
+        elif isinstance(bundle, str):
+            self._file_path = bundle
+
+        info = _mfc_dump_size_code(self._file_path or '')
+        if not self._file_path or info is None:
+            self.setRightButton(resources.get_str('start'), active=False)
+            if self._toast:
+                self._toast.show(
+                    'Unsupported MFC dump size',
+                    icon='warning',
+                    duration_ms=0,
+                )
+            return
+        self._size_code, self._size_label = info
+
+    def _start(self):
+        if not self._file_path or self._size_code is None:
+            return
+        self.setbusy()
+        self._sim_stopping = False
+        self.setLeftButton(resources.get_str('stop'))
+        self.setRightButton(resources.get_str('start'), active=False)
+        if self._progress:
+            self._progress.setMessage('Loading dump...')
+            self._progress.setProgress(15)
+
+        import threading
+
+        def _run():
+            status = 'error'
+            message = ''
+            try:
+                from lib import executor
+                base = os.path.splitext(self._file_path)[0]
+                size_flag = {'0': '--mini', '1': '--1k', '2': '--2k', '4': '--4k'}[self._size_code]
+                eload = 'hf mf eload %s -f %s' % (size_flag, base)
+                self._last_pm3_cmd = eload
+                ret = executor.startPM3Task(eload, 30000)
+                if ret != 1:
+                    message = executor.getPrintContent() or 'eload failed'
+                else:
+                    self._ui_progress('Simulating...', 65)
+                    sim = 'hf mf sim t'
+                    self._last_pm3_cmd = sim
+                    ret = executor.startPM3Task(sim, -1)
+                    message = executor.getPrintContent()
+                    status = 'done' if ret == 1 or self._sim_stopping else 'error'
+            except Exception as exc:
+                message = str(exc)
+            self._ui_complete(status, message)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _ui_progress(self, message, pct):
+        def _apply():
+            if self._progress:
+                self._progress.setMessage(message)
+                self._progress.setProgress(pct)
+        root = getattr(actstack, '_root', None)
+        if root is not None:
+            root.after(0, _apply)
+        else:
+            _apply()
+
+    def _ui_complete(self, status, message):
+        def _apply():
+            self.setidle()
+            self.setLeftButton(resources.get_str('back'))
+            self.setRightButton(resources.get_str('start'))
+            if self._progress:
+                self._progress.setProgress(100 if status == 'done' else 0)
+                self._progress.setMessage(
+                    'Simulation stopped' if status == 'done' else 'Simulation failed')
+            if self._toast:
+                if status == 'done':
+                    self._toast.show('Simulation stopped', duration_ms=3000)
+                else:
+                    text = (message or 'Simulation failed').strip()
+                    if len(text) > 120:
+                        text = text[:117] + '...'
+                    self._toast.show(text, icon='error', duration_ms=0)
+        root = getattr(actstack, '_root', None)
+        if root is not None:
+            root.after(0, _apply)
+        else:
+            _apply()
+
+    def _stop(self):
+        self._sim_stopping = True
+        if self._toast:
+            self._toast.show(resources.get_str('processing'), duration_ms=0)
+        try:
+            import hmi_driver
+            hmi_driver.presspm3()
+        except Exception:
+            pass
+        try:
+            from lib import executor
+            executor.stopPM3Task(wait=False)
+        except Exception:
+            pass
+
+    def onKeyEvent(self, key):
+        if key == KEY_M1:
+            if self.isbusy():
+                self._stop()
+            else:
+                self.finish()
+        elif key in (KEY_M2, KEY_OK):
+            if not self.isbusy():
+                self._start()
+        elif key == KEY_PWR:
+            if self._handlePWR():
+                return
+            if self.isbusy():
+                self._stop()
+                return
+            self.finish()
+
+
 # =====================================================================
 # A-22: CardWalletActivity (Dump Files)
 # =====================================================================
@@ -8198,6 +8595,12 @@ class ReadFromHistoryActivity(BaseActivity):
         #         'atqa':'0004','found':True,'type':1})
         # The original passes the full scan cache dict as bundle.
         # SimulationActivity.onCreate extracts sim_index from 'type' field.
+        if self._dump_type_key == 'mf1' and _mfc_dump_size_code(self._file_path or '') is not None:
+            actstack.start_activity(
+                MifareDumpSimulationActivity,
+                {'file_path': self._file_path},
+            )
+            return
         tag_type = self._scan_cache.get('type', -1)
         if tag_type not in _SIMULATE_TYPES:
             return

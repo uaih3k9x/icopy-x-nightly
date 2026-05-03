@@ -160,6 +160,9 @@ class PluginActivity(BaseActivity):
                 self._plugin_instance = self._entry_class()
                 # Inject host reference so plugin methods can call helpers.
                 self._plugin_instance.host = self
+                on_load = getattr(self._plugin_instance, 'on_load', None)
+                if callable(on_load):
+                    on_load()
             except Exception:
                 logger.error("Failed to instantiate plugin entry_class: %s",
                              traceback.format_exc())
@@ -401,34 +404,47 @@ class PluginActivity(BaseActivity):
                 resolved_title = '%s %s' % (resolved_title, self._renderer.resolve(page))
             self.setTitle(resolved_title)
 
-        # Render content and buttons
-        self._renderer.render(screen)
+        # Render content only. PluginActivity owns softkey rendering through
+        # BaseActivity; letting JsonRenderer draw them too causes doubled text.
+        render_screen = dict(screen)
+        render_screen['buttons'] = {}
+        self._renderer.render(render_screen)
 
-        # Handle buttons for M1/M2 active state
+        # Handle buttons for M1/M2 active state via BaseActivity.
         buttons = screen.get('buttons', {})
         left_btn = buttons.get('left')
         right_btn = buttons.get('right')
-        if left_btn:
-            resolved = self._renderer.resolve(
-                left_btn if isinstance(left_btn, str)
-                else left_btn.get('text', '')
-            )
-            self.setLeftButton(resolved)
+        left_text, left_active = self._resolve_button(left_btn)
+        right_text, right_active = self._resolve_button(right_btn)
+
+        if not left_text and not right_text:
+            self.dismissButton()
         else:
-            self.dismissButton(left=True)
-        if right_btn:
-            resolved = self._renderer.resolve(
-                right_btn if isinstance(right_btn, str)
-                else right_btn.get('text', '')
-            )
-            self.setRightButton(resolved)
-        else:
-            self.dismissButton(right=True)
+            if left_text:
+                self.setLeftButton(left_text, active=left_active)
+            else:
+                self.dismissButton(left=True)
+            if right_text:
+                self.setRightButton(right_text, active=right_active)
+            else:
+                self.dismissButton(right=True)
 
         # Show toast if defined in screen
         toast_def = screen.get('toast')
         if toast_def:
             self._show_screen_toast(toast_def)
+
+    def _resolve_button(self, button_def):
+        """Return (text, active) for a plugin button definition."""
+        if not button_def:
+            return '', True
+        active = True
+        if isinstance(button_def, dict):
+            active = button_def.get('active', True)
+            text = button_def.get('text', '')
+        else:
+            text = button_def
+        return self._renderer.resolve(text), bool(active)
 
     def _inject_list_state(self, screen):
         """Inject persisted list selection/scroll into screen content.

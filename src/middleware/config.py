@@ -40,7 +40,12 @@ import configparser
 import os
 
 # Default settings from original config.so constants
-DEFAULT_SETTINGS = {'backlight': '2', 'volume': '2', 'screen_mirror': '0'}
+DEFAULT_SETTINGS = {
+    'backlight': '2',
+    'volume': '2',
+    'screen_mirror': '0',
+    'language': 'en',
+}
 
 # Config file path — same as original firmware
 _CONF_PATH = '/mnt/sdcard/root2/root/home/pi/ipk_app_main/data/conf.ini'

@@ -15,7 +15,7 @@ import pytest
 
 from tests.ui.conftest import MockCanvas
 import actstack
-from _constants import KEY_PWR, KEY_UP, KEY_DOWN, KEY_OK, KEY_M1, KEY_M2
+from _constants import BTN_BAR_Y0, KEY_PWR, KEY_UP, KEY_DOWN, KEY_OK, KEY_M1, KEY_M2
 from plugin_loader import PluginInfo
 from plugins_menu import PluginsMenuActivity
 
@@ -107,6 +107,31 @@ class TestPluginsMenu:
         assert 'Alpha' in names
         assert 'Beta' in names
         assert 'Gamma' not in names
+
+    def test_list_stays_above_back_button(self, monkeypatch):
+        """Plugin rows stay out of the bottom Back button bar."""
+        import actmain
+        plugins = [
+            _make_plugin_info('Plugin %d' % idx, 'plugin_%d' % idx)
+            for idx in range(6)
+        ]
+        monkeypatch.setattr(actmain, '_discovered_plugins', plugins)
+
+        act = actstack.start_activity(PluginsMenuActivity)
+        assert act.lv_plugins._max_display == 4
+
+        canvas = act.getCanvas()
+        text_ids = act.lv_plugins._canvas.find_withtag(act.lv_plugins._tag_text)
+        row_texts = [
+            canvas.get_item(item_id)
+            for item_id in text_ids
+        ]
+        row_texts = [
+            item for item in row_texts
+            if item and item['options'].get('text', '').startswith('Plugin ')
+        ]
+        assert len(row_texts) == 4
+        assert max(item['coords'][1] for item in row_texts) < BTN_BAR_Y0
 
     def test_m1_finishes(self, mock_plugins):
         """M1 key finishes the activity."""

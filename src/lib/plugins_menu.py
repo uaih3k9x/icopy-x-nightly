@@ -97,6 +97,10 @@ class PluginsMenuActivity(BaseActivity):
             self.lv_plugins = ListView(
                 canvas, xy=xy, text_size=text_size, item_height=LIST_ITEM_H,
             )
+            # The bottom button bar occupies y=200..240 for "Back".  Keep the
+            # plugin list inside the content band (40..200) so the last row is
+            # never hidden behind the button label.
+            self.lv_plugins.setDisplayItemMax(4)
             labels = [p.name for p in self._plugins]
             self.lv_plugins.setItems(labels)
             icons = [p.icon_path or 'plugin' for p in self._plugins]
@@ -224,7 +228,7 @@ class PluginsMenuActivity(BaseActivity):
 
     def _updateTitle(self):
         """Update title: "Plugins N/M"."""
-        base_title = "Plugins"
+        base_title = resources.get_str('plugins')
         if self.lv_plugins is not None:
             total = self.lv_plugins.getPageCount()
             current = self.lv_plugins.getPagePosition() + 1

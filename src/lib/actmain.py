@@ -83,6 +83,26 @@ _ACTIVITY_REGISTRY = {
 _discovered_plugins = []
 
 
+_MENU_RESOURCE_KEYS = {
+    'autocopy': 'auto_copy',
+    'dump_files': 'card_wallet',
+    'scan': 'scan_tag',
+    'read_list': 'read_tag',
+    'sniff': 'sniff_tag',
+    'simulation': 'simulation',
+    'pcmode': 'pc-mode',
+    'diagnosis': 'diagnosis',
+    'backlight': 'backlight',
+    'volume': 'volume',
+    'about': 'about',
+    'erase': 'wipe_tag',
+    'time_settings': 'time_sync',
+    'lua_script': 'lua_script',
+    'plugins_menu': 'plugins',
+    'settings_menu': 'settings',
+}
+
+
 def _compose_menu_items():
     """Build main menu entries from static items and current plugins."""
     items = list(MainActivity.MENU_ITEMS)
@@ -153,9 +173,9 @@ def reload_plugins():
     return _discovered_plugins
 
 class MainActivity(BaseActivity):
-    """Root activity -- main menu with 14 items.
+    """Root activity -- main menu with the stock entries plus extensions.
 
-    Uses ListView with icons for all 14 items.
+    Uses ListView with icons for all items.
     Handles activity launch via actstack.start_activity.
     Battery bar shown via BaseActivity.onResume.
 
@@ -164,7 +184,7 @@ class MainActivity(BaseActivity):
     calling finish().
 
     Instance variables (beyond BaseActivity):
-        lv_main_page    -- ListView widget for the 14-item menu
+        lv_main_page    -- ListView widget for the menu
         _menu_items     -- list of (label, icon_or_None, action_key) tuples
     """
 
@@ -201,7 +221,7 @@ class MainActivity(BaseActivity):
             1. setTitle("Main Page")
             2. setLeftButton("") -- M1 empty on root (no back)
             3. setRightButton("") -- no button labels on real device
-            4. Create ListView at (0, 40) with 14 items + icons
+            4. Create ListView at (0, 40) with menu items + icons
         """
         # Buttons: M1 empty, M2 empty (HANDOVER.md, main_page_1_3_1.png)
         self.setLeftButton("")
@@ -215,7 +235,7 @@ class MainActivity(BaseActivity):
             self.lv_main_page = ListView(
                 canvas, xy=xy, text_size=text_size, item_height=LIST_ITEM_H,
             )
-            labels = [item[0] for item in self._menu_items]
+            labels = self._menu_labels()
             self.lv_main_page.setItems(labels)
             icons = [item[1] for item in self._menu_items]
             self.lv_main_page.setIcons(icons)
@@ -229,8 +249,10 @@ class MainActivity(BaseActivity):
     def onResume(self):
         """Refresh battery, restore list display and title."""
         super().onResume()
-        if self.lv_main_page is not None and not self.lv_main_page.isShowing():
-            self.lv_main_page.show()
+        if self.lv_main_page is not None:
+            self._apply_menu_labels(preserve_selection=True)
+            if not self.lv_main_page.isShowing():
+                self.lv_main_page.show()
         self._updateTitle()
 
     def onKeyEvent(self, key):
@@ -375,6 +397,34 @@ class MainActivity(BaseActivity):
         """Return the number of menu items."""
         return len(self._menu_items)
 
+    def _menu_labels(self):
+        """Return display labels localized for the active language."""
+        return [self._display_label(item) for item in self._menu_items]
+
+    def _display_label(self, item):
+        """Return a localized menu label when the action has a resource key."""
+        label, _icon, action_key = item
+        key = _MENU_RESOURCE_KEYS.get(action_key)
+        if key is None:
+            return label
+        text = resources.get_str(key)
+        if text == key:
+            return label
+        return text
+
+    def _apply_menu_labels(self, preserve_selection=False):
+        """Refresh visible labels without changing the action model."""
+        if self.lv_main_page is None:
+            return
+        labels = self._menu_labels()
+        if self.lv_main_page._items == labels:
+            return
+
+        pos = self.lv_main_page.selection() if preserve_selection else 0
+        self.lv_main_page.setItems(labels)
+        if preserve_selection:
+            self.lv_main_page.setSelection(pos)
+
     def _onPageChange(self, page):
         """Callback from ListView when page changes."""
         self._updateTitle()
@@ -403,7 +453,7 @@ class MainActivity(BaseActivity):
         self._menu_items = _compose_menu_items()
 
         if self.lv_main_page is not None:
-            labels = [item[0] for item in self._menu_items]
+            labels = self._menu_labels()
             icons = [item[1] for item in self._menu_items]
             self.lv_main_page.setItems(labels)
             self.lv_main_page.setIcons(icons)

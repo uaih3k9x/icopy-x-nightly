@@ -1,0 +1,83 @@
+{
+    "plugin": true,
+    "name": "Dump Diff",
+    "version": "1.0.0",
+    "initial_state": "idle",
+    "states": {
+        "idle": {
+            "screen": {
+                "title": "Dump Diff",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "Compare newest dumps", "size": "large"},
+                        {"text": "M2 cycles type.", "size": "normal"},
+                        {"text": "Current: {dump_type}", "size": "normal"},
+                        {"text": "OK compares newest two.", "size": "normal"}
+                    ]
+                },
+                "buttons": {"left": "Back", "right": "Type"},
+                "keys": {
+                    "M1": "finish",
+                    "M2": "run:next_type",
+                    "OK": "set_state:running"
+                }
+            }
+        },
+        "running": {
+            "on_enter": "run:compare_latest",
+            "screen": {
+                "title": "Dump Diff",
+                "content": {
+                    "type": "progress",
+                    "message": "{progress_message}",
+                    "value": "{progress_value}",
+                    "max": 100
+                },
+                "buttons": {"left": null, "right": null},
+                "keys": {}
+            },
+            "transitions": {
+                "on_result.status==done": "result",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "result": {
+            "screen": {
+                "title": "Diff Result",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{result_text}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Again"},
+                "keys": {
+                    "M1": "finish",
+                    "M2": "set_state:idle",
+                    "OK": "set_state:idle"
+                }
+            }
+        },
+        "error": {
+            "screen": {
+                "title": "Diff Error",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{error_msg}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Again"},
+                "keys": {
+                    "M1": "finish",
+                    "M2": "set_state:idle",
+                    "OK": "set_state:idle"
+                }
+            }
+        }
+    }
+}

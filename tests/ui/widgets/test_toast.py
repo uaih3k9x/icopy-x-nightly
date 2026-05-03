@@ -64,6 +64,14 @@ def _get_texts(canvas):
     return canvas.get_all_text()
 
 
+def _toast_cancel_timers(canvas, toast):
+    return [
+        timer_id
+        for timer_id, (_ms, func, _args) in canvas._timers.items()
+        if func == toast.cancel
+    ]
+
+
 # =================================================================
 # Toast overlay creation
 # =================================================================
@@ -145,19 +153,19 @@ class TestToastAutoDismiss:
     def test_auto_dismiss_timer_set(self, canvas, toast):
         """show() with duration > 0 stores an after() timer."""
         toast.show('Timed', duration_ms=3000)
-        assert len(canvas._timers) == 1
+        assert len(_toast_cancel_timers(canvas, toast)) == 1
 
     def test_cancel_cancels_timer(self, canvas, toast):
         """cancel() removes the auto-dismiss timer."""
         toast.show('Timed', duration_ms=3000)
-        assert len(canvas._timers) == 1
+        assert len(_toast_cancel_timers(canvas, toast)) == 1
         toast.cancel()
-        assert len(canvas._timers) == 0
+        assert len(_toast_cancel_timers(canvas, toast)) == 0
 
     def test_persistent_toast_no_timer(self, canvas, toast):
         """duration_ms=0 means no auto-dismiss timer."""
         toast.show('Persistent', duration_ms=0)
-        assert len(canvas._timers) == 0
+        assert len(_toast_cancel_timers(canvas, toast)) == 0
 
     def test_auto_dismiss_fires_cancel(self, canvas, toast):
         """When timer fires, toast is dismissed."""

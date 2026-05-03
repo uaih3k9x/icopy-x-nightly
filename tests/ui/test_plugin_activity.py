@@ -212,6 +212,50 @@ class TestStateTransitions:
 
 
 # =====================================================================
+# TestSoftkeyRendering
+# =====================================================================
+
+class TestSoftkeyRendering:
+    """PluginActivity owns softkeys so JSON buttons are not double-drawn."""
+
+    def test_softkeys_render_once_via_base_activity(self):
+        act = _start_plugin()
+        canvas = act.getCanvas()
+
+        assert canvas.find_withtag('_jr_buttons') == ()
+
+        left_ids = canvas.find_withtag('tags_btn_left')
+        assert len(left_ids) == 1
+        assert canvas.itemcget(left_ids[0], 'text') == 'Back'
+
+    def test_softkey_active_state_from_dict_button(self):
+        ui = {
+            'initial_state': 'main',
+            'states': {
+                'main': {
+                    'screen': {
+                        'title': 'Buttons',
+                        'content': {'type': 'text',
+                                    'lines': [{'text': 'Hello'}]},
+                        'buttons': {
+                            'left': {'text': 'Back', 'active': False},
+                            'right': {'text': 'Again', 'active': True},
+                        },
+                    },
+                },
+            },
+        }
+        act = _start_plugin(ui=ui)
+        canvas = act.getCanvas()
+
+        assert canvas.find_withtag('_jr_buttons') == ()
+        assert len(canvas.find_withtag('tags_btn_left')) == 1
+        assert len(canvas.find_withtag('tags_btn_right')) == 1
+        assert act._m1_active is False
+        assert act._m2_active is True
+
+
+# =====================================================================
 # TestPluginHelpers
 # =====================================================================
 

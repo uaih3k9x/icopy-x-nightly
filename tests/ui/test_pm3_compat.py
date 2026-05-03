@@ -348,19 +348,19 @@ class TestTranslateComplexArgs:
 
     def test_nested_key_a_target_a(self, original_mode):
         result = translate('hf mf nested --1k --blk 0 -a -k FFFFFFFFFFFF --tblk 4 --ta')
-        assert result == 'hf mf nested 1 0 A FFFFFFFFFFFF 4 A'
+        assert result == 'hf mf nested o 0 A FFFFFFFFFFFF 4 A'
 
     def test_nested_key_b_target_b(self, original_mode):
         result = translate('hf mf nested --1k --blk 0 -b -k FFFFFFFFFFFF --tblk 4 --tb')
-        assert result == 'hf mf nested 1 0 B FFFFFFFFFFFF 4 B'
+        assert result == 'hf mf nested o 0 B FFFFFFFFFFFF 4 B'
 
     def test_nested_key_a_target_b(self, original_mode):
         result = translate('hf mf nested --1k --blk 3 -a -k 000000000000 --tblk 7 --tb')
-        assert result == 'hf mf nested 1 3 A 000000000000 7 B'
+        assert result == 'hf mf nested o 3 A 000000000000 7 B'
 
     def test_nested_high_block(self, original_mode):
         result = translate('hf mf nested --1k --blk 63 -b -k AABBCCDDEEFF --tblk 32 --ta')
-        assert result == 'hf mf nested 1 63 B AABBCCDDEEFF 32 A'
+        assert result == 'hf mf nested o 63 B AABBCCDDEEFF 32 A'
 
     # --- hf mf fchk (size flag mapping) ---
 
@@ -418,15 +418,15 @@ class TestTranslateComplexArgs:
 
     def test_csetuid_with_wipe(self, original_mode):
         result = translate('hf mf csetuid -u 01020304 -s 08 -a 0004 -w')
-        assert result == 'hf mf csetuid 01020304 08 0004 w'
+        assert result == 'hf mf csetuid 01020304 0004 08 w'
 
     def test_csetuid_without_wipe(self, original_mode):
         result = translate('hf mf csetuid -u 01020304 -s 08 -a 0004')
-        assert result == 'hf mf csetuid 01020304 08 0004'
+        assert result == 'hf mf csetuid 01020304 0004 08'
 
     def test_csetuid_7byte_uid(self, original_mode):
         result = translate('hf mf csetuid -u 01020304050607 -s 08 -a 0044 -w')
-        assert result == 'hf mf csetuid 01020304050607 08 0044 w'
+        assert result == 'hf mf csetuid 01020304050607 0044 08 w'
 
     # --- hf mf cgetblk ---
 
@@ -451,6 +451,10 @@ class TestTranslateComplexArgs:
     def test_csave_4k(self, original_mode):
         result = translate('hf mf csave --4k -f /mnt/upan/dump')
         assert result == 'hf mf csave 4 o /mnt/upan/dump'
+
+    def test_eload_1k(self, original_mode):
+        result = translate('hf mf eload --1k -f /mnt/upan/dump/mf1/a')
+        assert result == 'hf mf eload 1 /mnt/upan/dump/mf1/a'
 
 
 # =====================================================================
@@ -695,16 +699,18 @@ class TestFullCompatTable:
         ('hf mf fchk --1k -f /path/to/keys.dic', 'hf mf fchk 1 /path/to/keys.dic'),
         # Row 5: nested
         ('hf mf nested --1k --blk 0 -a -k FFFFFFFFFFFF --tblk 4 --ta',
-         'hf mf nested 1 0 A FFFFFFFFFFFF 4 A'),
+         'hf mf nested o 0 A FFFFFFFFFFFF 4 A'),
         # Row 10: cgetblk
         ('hf mf cgetblk --blk 0', 'hf mf cgetblk 0'),
         # Row 12: csetuid
         ('hf mf csetuid -u 01020304 -s 08 -a 0004 -w',
-         'hf mf csetuid 01020304 08 0004 w'),
+         'hf mf csetuid 01020304 0004 08 w'),
         # Row 13: cload
         ('hf mf cload -f /path/to/dump', 'hf mf cload b /path/to/dump'),
         # Row 14: csave
         ('hf mf csave --1k -f myfile', 'hf mf csave 1 o myfile'),
+        # MFC dump simulation: load emulator memory, then simulate from it
+        ('hf mf eload --1k -f myfile', 'hf mf eload 1 myfile'),
         # Row 16: rdbl
         ('hf mf rdbl --blk 0 -a -k FFFFFFFFFFFF',
          'hf mf rdbl 0 A FFFFFFFFFFFF'),

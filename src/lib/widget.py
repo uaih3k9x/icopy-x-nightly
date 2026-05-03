@@ -1261,7 +1261,10 @@ class Toast:
 
     def _draw(self, message, icon, wrap='auto'):
         """Render mask layer (PIL RGBA) + text (tkinter canvas)."""
-        from PIL import Image, ImageTk
+        try:
+            from PIL import Image, ImageTk
+        except ImportError:
+            return self._draw_canvas_fallback(message, wrap=wrap)
         import os
 
         W, H = SCREEN_W, SCREEN_H
@@ -1374,6 +1377,54 @@ class Toast:
                 tags=self._tag_text)
             text_y += lh
         # Ensure text renders above the mask layer (z-order fix)
+        self._canvas.tag_raise(self._tag_text)
+
+    def _draw_canvas_fallback(self, message, wrap='auto'):
+        """Render a non-transparent toast when Pillow is unavailable."""
+        import tkinter.font as tkfont
+        from lib._constants import TAG_BTN_BG, BTN_BAR_Y0
+
+        W, H = SCREEN_W, SCREEN_H
+        tw = self._TOAST_W
+        font_size = 18
+        tk_font = tkfont.Font(family='mononoki', size=font_size, weight='bold')
+        ta_w = tw - self._ML - self._MR
+        if wrap == 'no-wrap':
+            lines = [line.strip() for line in message.split('\n')]
+        else:
+            clean = ' '.join(message.replace('\n', ' ').split())
+            lines = self._wrap(clean, tk_font, ta_w)
+            if wrap == 'auto':
+                while len(lines) > 3 and font_size > 12:
+                    font_size -= 2
+                    tk_font = tkfont.Font(
+                        family='mononoki', size=font_size, weight='bold')
+                    lines = self._wrap(clean, tk_font, ta_w)
+        lh = tk_font.metrics('linespace')
+        text_h = len(lines) * lh
+        toast_h = max(40, text_h + self._MTB * 2)
+        tx = (W - tw) // 2
+        ty = (H - toast_h) // 2
+
+        has_btn_bar = bool(self._canvas.find_withtag(TAG_BTN_BG)) or \
+                      bool(self._canvas.find_withtag('button_bar'))
+        dim_h = BTN_BAR_Y0 if has_btn_bar else H
+        self._canvas.create_rectangle(
+            0, 0, W, dim_h, fill='#d9d9d9', outline='#d9d9d9',
+            stipple='gray25', tags=self._tag_mask)
+        self._canvas.create_rectangle(
+            tx, ty, tx + tw, ty + toast_h,
+            fill='#333333', outline='#333333', tags=self._tag_mask)
+
+        text_y = ty + (toast_h - text_h) // 2 + lh // 2
+        text_cx = W // 2
+        for line in lines:
+            self._canvas.create_text(
+                text_cx, text_y,
+                text=line, fill='white',
+                font=('mononoki', font_size, 'bold'), anchor='center',
+                tags=self._tag_text)
+            text_y += lh
         self._canvas.tag_raise(self._tag_text)
 
     @staticmethod

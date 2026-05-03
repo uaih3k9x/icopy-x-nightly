@@ -20,6 +20,7 @@ import pytest
 from tests.ui.conftest import MockCanvas
 import actstack
 from _constants import KEY_UP, KEY_DOWN, KEY_OK, KEY_M1, KEY_M2, KEY_PWR
+from lib import resources
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -28,6 +29,7 @@ def _setup():
     """Reset actstack and wire up MockCanvas factory."""
     actstack._reset()
     actstack._canvas_factory = lambda: MockCanvas()
+    resources.setLanguage(0)
 
 
 def _make_about(version_mod=None):
@@ -67,6 +69,7 @@ def _make_version_mod(**kwargs):
 def _teardown():
     """Clean up sys.modules."""
     sys.modules.pop('version', None)
+    resources.setLanguage(0)
     actstack._reset()
 
 
@@ -199,7 +202,7 @@ class TestAboutKeyNavigation:
         assert act.get_page() == 0
 
     def test_down_clamped_at_max(self):
-        """DOWN on page 2 (max page) does not go past max."""
+        """DOWN on the last page does not go past max."""
         act = _make_about()
         act.onKeyEvent(KEY_DOWN)
         assert act.get_page() == 1

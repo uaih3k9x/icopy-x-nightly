@@ -156,8 +156,20 @@ class TestCardWalletActivity:
         result = CardWalletActivity._formatFilename('M1-1K-4B_DAEFB416_1.bin')
         assert result == '1K-4B-DAEFB416(1)'
 
-    def test_scroll_type_list(self):
+    def test_scroll_type_list(self, tmp_path, monkeypatch):
         """UP/DOWN navigate the type list."""
+        import activity_main
+        mf1_dir = tmp_path / 'mf1'
+        mfu_dir = tmp_path / 'mfu'
+        mf1_dir.mkdir()
+        mfu_dir.mkdir()
+        (mf1_dir / 'M1-1K-4B_AABBCCDD_1.bin').write_bytes(b'\0' * 1024)
+        (mfu_dir / 'M0-UL_AABBCCDDEEFF00_1.bin').write_bytes(b'\0' * 32)
+        patched = dict(activity_main.DUMP_DIRS)
+        patched['mf1'] = str(mf1_dir)
+        patched['mfu'] = str(mfu_dir)
+        monkeypatch.setattr(activity_main, 'DUMP_DIRS', patched)
+
         act = _create_wallet()
         assert act._listview.selection() == 0
         act.onKeyEvent(KEY_DOWN)
