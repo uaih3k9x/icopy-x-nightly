@@ -24,6 +24,7 @@ APP_LOG = '/tmp/icopy-app.log'
 ROOT = '/mnt/icopy-runroot'
 APP = ROOT + '/home/pi/ipk_app_main'
 PYTHON = ROOT + '/usr/local/python-3.8.0/bin/python3.8'
+SITE_PACKAGES = ROOT + '/home/pi/.local/lib/python3.8/site-packages'
 RUNNER = '/home/qx/icopy-x-reimpl/tools/icopy_emulator_runner.py'
 
 VALID_KEYS = {'UP', 'DOWN', 'LEFT', 'RIGHT', 'OK', 'M1', 'M2', 'PWR', 'ALL'}
@@ -148,7 +149,7 @@ def start_emulator() -> dict:
     cmd = (
         'cd {app}; '
         'nohup env PYTHONHOME={root}/usr/local/python-3.8.0 '
-        'PYTHONPATH={app}:{app}/main:{app}/lib '
+        'PYTHONPATH={app}:{app}/main:{app}/lib:{site_packages} '
         'ICOPY_APP_DIR={app} ICOPY_KEY_FILE={key_file} {lang_env}'
         'ICOPY_EMULATOR=1 DISPLAY={display} '
         '/usr/bin/qemu-arm -L {root} {python} {runner} '
@@ -159,6 +160,7 @@ def start_emulator() -> dict:
     ).format(
         app=shell_quote(APP),
         root=shell_quote(ROOT),
+        site_packages=shell_quote(SITE_PACKAGES),
         key_file=shell_quote(KEY_FILE),
         lang_env=optional_env('ICOPY_LANG'),
         display=shell_quote(DISPLAY),

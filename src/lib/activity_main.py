@@ -742,11 +742,11 @@ class AboutActivity(BaseActivity):
         - UP = page 0
         - PWR = finish
 
-    Page 2 (Engineering Sample):
-        - Build provenance marker for noflash engineering builds.
+    Page 2 (Nightly Build):
+        - Project address and experimental firmware warning.
 
     Page 3:
-        - Embedded scroller easter egg.
+        - Embedded original scroller easter egg.
 
     Key handling:
         - M1: (empty label on page 0) -- navigate to previous page if not page 0
@@ -765,8 +765,6 @@ class AboutActivity(BaseActivity):
         self._version_info = {}
         self._scroller = None
         self._text_scroller_timer = None
-        self._text_scroller_index = 0
-        self._text_scroller_contributors = []
         super().__init__(bundle)
 
     def onCreate(self, bundle):
@@ -791,6 +789,7 @@ class AboutActivity(BaseActivity):
         # "Processing..." toast stays visible until data arrives.
         self._version_info = {
             'typ': '...', 'hw': '', 'hmi': '...', 'os': '...', 'pm': '...',
+            'build_hash': 'unknown',
         }
         self._show_page()
 
@@ -836,7 +835,7 @@ class AboutActivity(BaseActivity):
 
     def _on_version_loaded(self):
         """Tk-thread callback: redraw page with real data, dismiss toast."""
-        if self._page_new <= 1:
+        if self._page_new <= 2:
             self._show_page()
         if self._toast is not None:
             self._toast.cancel()
@@ -878,6 +877,11 @@ class AboutActivity(BaseActivity):
             info['sn'] = version.getSN()
         except Exception:
             info['sn'] = '?'
+        try:
+            import version
+            info['build_hash'] = version.getBuildHash()
+        except Exception:
+            info['build_hash'] = 'unknown'
 
         self._version_info = info
 
@@ -889,8 +893,8 @@ class AboutActivity(BaseActivity):
           [1] = page 1 text at (19, 140), fill=black, font=13, anchor=w
           [2] = page indicator at (165, 8), fill=white, font=11, anchor=nw
         Visible page at y=140, other page off-screen at y=500.
-        Page 2 is the engineering sample marker. Page 3 is the embedded
-        scroller easter egg.
+        Page 2 is the nightly build project/warning page. Page 3 is the
+        original embedded scroller easter egg.
         """
         canvas = self.getCanvas()
         if canvas is None:
@@ -948,15 +952,34 @@ class AboutActivity(BaseActivity):
                                fill=TITLE_TEXT_COLOR, font=ind_font,
                                anchor='nw', tags='about_content')
         elif self._page_new == 2:
-            sample_text = (
-                resources.get_str('about_sample_firmware') + '\n\n' +
-                resources.get_str('about_sample_author')
+            build_hash = self._version_info.get('build_hash') or 'unknown'
+            nightly_title = 'iCopy-X Nightly'
+            nightly_body = (
+                'Personal experimental fork\n'
+                '\n'
+                'Maintained by uaih3k9x\n'
+                'Tracks lab-401/icopy-x main\n'
+                'License: Polyform Noncommercial\n'
+                '\n'
+                'https://github.com/uaih3k9x/\n'
+                '         icopy-x-nightly\n'
+                '\n'
+                'Version: nightly-20260503\n'
+                'Build: %s\n' % build_hash +
+                '\n'
+                'WARNING: Experimental\n'
+                'Report issues in repo,\n'
+                'not lab-401 upstream'
             )
-            canvas.create_text(SCREEN_W // 2, 132, text=sample_text,
+            canvas.create_text(SCREEN_W // 2, 48, text=nightly_title,
                                fill=NORMAL_TEXT_COLOR,
-                               font=resources.get_font_force_zh(14),
-                               anchor='center', width=SCREEN_W - 24,
-                               justify='center', tags='about_content')
+                               font=resources.get_font_force_en(12),
+                               anchor='center', tags='about_content')
+            canvas.create_text(17, 65, text=nightly_body,
+                               fill=NORMAL_TEXT_COLOR,
+                               font=resources.get_font_force_en(8),
+                               anchor='nw', width=SCREEN_W - 34,
+                               justify='left', tags='about_content')
             canvas.create_text(ABOUT_PAGE_IND_X, ABOUT_PAGE_IND_Y,
                                text=page_indicator,
                                fill=TITLE_TEXT_COLOR, font=ind_font,
@@ -987,7 +1010,6 @@ class AboutActivity(BaseActivity):
         except ImportError as exc:
             logger.warning("About scroller unavailable: %s", exc)
             self._scroller = None
-            self._start_text_scroller()
             return
         try:
             self._scroller = EmbeddedScroller(actstack._root)
@@ -999,7 +1021,6 @@ class AboutActivity(BaseActivity):
         except Exception:
             logger.exception("Failed to start about scroller")
             self._scroller = None
-            self._start_text_scroller()
             return
         # Music is independent of the visual — start it even if the
         # scroller widget itself failed (no point silencing the song
@@ -1009,127 +1030,6 @@ class AboutActivity(BaseActivity):
             audio.startScrollerMusic(self._SCROLLER_OGG)
         except Exception:
             logger.exception("Failed to start scroller music")
-
-    def _start_text_scroller(self):
-        """Render the About easter egg as pure Canvas text.
-
-        QEMU and many stock rootfs images do not ship Pillow, so the sprite
-        scroller cannot be assumed to exist.  This keeps the hidden About page
-        useful without adding a native dependency to the noflash package.
-        """
-        self._text_scroller_index = 0
-        self._text_scroller_contributors = self._load_contributor_lines()
-        self._draw_text_scroller_frame()
-
-    def _load_contributor_lines(self):
-        here = os.path.dirname(__file__)
-        candidates = [
-            os.path.join(here, '..', 'res', 'about', 'contributors.txt'),
-            os.path.join(here, '..', '..', 'res', 'about', 'contributors.txt'),
-            os.path.join(os.getcwd(), 'res', 'about', 'contributors.txt'),
-        ]
-        path = None
-        for candidate in candidates:
-            candidate = os.path.normpath(candidate)
-            if os.path.isfile(candidate):
-                path = candidate
-                break
-
-        lines = []
-        if path is None:
-            return lines
-        try:
-            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
-                for raw in fh:
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    name, sep, count = raw.partition('`')
-                    if sep:
-                        lines.append('%-13s %s' % (name[:13], count))
-                    else:
-                        lines.append(raw[:24])
-                    if len(lines) >= 80:
-                        break
-        except OSError:
-            pass
-        return lines
-
-    def _draw_text_scroller_frame(self):
-        canvas = self.getCanvas()
-        if canvas is None:
-            return
-
-        canvas.delete('about_text_scroller')
-        canvas.create_rectangle(
-            0, 0, SCREEN_W, SCREEN_H,
-            fill='#151515', outline='#151515',
-            tags='about_text_scroller about_content',
-        )
-        canvas.create_text(
-            SCREEN_W // 2, 18,
-            text='iCopy-X Community',
-            fill='#FFFFFF',
-            font=resources.get_font_force_en(13),
-            anchor='center',
-            tags='about_text_scroller about_content',
-        )
-        canvas.create_text(
-            SCREEN_W // 2, 48,
-            text='雾雨电信工程样品固件\nuaih3k9x制作',
-            fill='#E8E8E8',
-            font=resources.get_font_force_zh(12),
-            anchor='center',
-            justify='center',
-            tags='about_text_scroller about_content',
-        )
-        contribs = self._text_scroller_contributors or [
-            'icopy-x-community',
-            'proxmark3 contributors',
-        ]
-        page_size = 8
-        if self._text_scroller_index >= len(contribs):
-            self._text_scroller_index = 0
-        chunk = contribs[
-            self._text_scroller_index:self._text_scroller_index + page_size]
-        if len(chunk) < page_size and len(contribs) > page_size:
-            chunk += contribs[:page_size - len(chunk)]
-
-        canvas.create_text(
-            SCREEN_W // 2, 84,
-            text='GREETINGS',
-            fill=COLOR_ACCENT,
-            font=resources.get_font_force_en(11),
-            anchor='center',
-            tags='about_text_scroller about_content',
-        )
-        canvas.create_text(
-            18, 104,
-            text='\n'.join(chunk),
-            fill='#F6F6F6',
-            font=resources.get_font_force_en(9),
-            anchor='nw',
-            width=SCREEN_W - 36,
-            tags='about_text_scroller about_content',
-        )
-
-        total = max(1, len(contribs))
-        canvas.create_text(
-            SCREEN_W // 2, SCREEN_H - 13,
-            text='%02d/%02d' % (self._text_scroller_index + 1, total),
-            fill='#8A8A8A',
-            font=resources.get_font_force_en(8),
-            anchor='center',
-            tags='about_text_scroller about_content',
-        )
-
-        self._text_scroller_index = (
-            self._text_scroller_index + page_size) % total
-        try:
-            self._text_scroller_timer = canvas.after(
-                1800, self._draw_text_scroller_frame)
-        except Exception:
-            self._text_scroller_timer = None
 
     def _stop_scroller(self):
         """Stop and destroy the embedded scroller + its music."""
@@ -2032,6 +1932,7 @@ class PCModeActivity(BaseActivity):
         self._btlv = None
         self._process_socat = None
         self._child_pid = None
+        self._resume_rescue_usb = False
         super().__init__(bundle)
 
     def onCreate(self, bundle):
@@ -2139,6 +2040,7 @@ class PCModeActivity(BaseActivity):
                 except Exception:
                     pass
             except Exception:
+                self._resume_rescue_usb_if_needed()
                 self._state = self.STATE_IDLE
                 root = actstack._root
                 if root is not None:
@@ -2189,6 +2091,8 @@ class PCModeActivity(BaseActivity):
           and the PC client saw "cannot communicate".
 
         New order (matches factory dmesg):
+          0. suspend rescue USB network     -> free configfs USB-NCM/ECM if
+                                               boot rescue owns the UDC.
           1. executor.startPM3Ctrl()        -> rftask empty-CTL tears
                                                down PM3 subprocess,
                                                releasing /dev/ttyACM0.
@@ -2207,6 +2111,10 @@ class PCModeActivity(BaseActivity):
                                                devices and free.
         """
         import stat as _stat, os as _os, time as _time
+
+        # 0. Boot-rescue USB networking uses the same UDC as PC mode.
+        #    Suspend it now and restore it on stop if it was active.
+        self._suspend_rescue_usb_if_needed()
 
         # 1. Kill PM3 subprocess so /dev/ttyACM0 is free for socat.
         try:
@@ -2278,6 +2186,35 @@ class PCModeActivity(BaseActivity):
             executor.reworkPM3All()
         except Exception:
             pass
+
+        self._resume_rescue_usb_if_needed()
+
+    def _suspend_rescue_usb_if_needed(self):
+        """Suspend boot-rescue USB networking while PC mode owns the UDC."""
+        self._resume_rescue_usb = False
+        try:
+            import gadget_linux
+            is_active = getattr(gadget_linux, 'is_rescue_usb_active', None)
+            suspend = getattr(gadget_linux, 'suspend_rescue_usb', None)
+            if callable(is_active) and is_active():
+                self._resume_rescue_usb = True
+                if callable(suspend):
+                    suspend()
+        except Exception:
+            logger.exception("Failed to suspend rescue USB before PC mode")
+
+    def _resume_rescue_usb_if_needed(self):
+        """Restore boot-rescue USB networking if PC mode suspended it."""
+        if not self._resume_rescue_usb:
+            return
+        self._resume_rescue_usb = False
+        try:
+            import gadget_linux
+            resume = getattr(gadget_linux, 'resume_rescue_usb', None)
+            if callable(resume):
+                resume(background=True)
+        except Exception:
+            logger.exception("Failed to resume rescue USB after PC mode")
 
     def start_socat(self):
         """Start socat bridge: ttyGS0 <-> ttyACM0 (direct serial).

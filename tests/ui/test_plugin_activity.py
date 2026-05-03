@@ -258,6 +258,67 @@ class TestScrollableText:
         assert 'Line 0' in texts
         assert 'Line 3' not in texts
 
+    def test_default_scroll_page_stays_clear_of_softkeys(self):
+        ui = {
+            'initial_state': 'main',
+            'states': {
+                'main': {
+                    'screen': {
+                        'title': 'Output',
+                        'content': {
+                            'type': 'text',
+                            'scrollable': True,
+                            'lines': [
+                                {'text': '\n'.join('Line %d' % i for i in range(12))},
+                            ],
+                        },
+                        'buttons': {'left': 'Back', 'right': 'Off'},
+                        'keys': {'M1': 'finish'},
+                    },
+                },
+            },
+        }
+
+        act = _start_plugin(ui=ui)
+        texts = act.getCanvas().get_all_text()
+        assert 'Line 7' in texts
+        assert 'Line 8' not in texts
+        assert 'Back' in texts
+        assert 'Off' in texts
+
+        act.callKeyEvent(KEY_DOWN)
+        texts = act.getCanvas().get_all_text()
+        assert act._text_scroll_state['main'] == 1
+        assert 'Line 8' in texts
+
+    def test_long_scrollable_text_wraps_before_paging(self):
+        ui = {
+            'initial_state': 'main',
+            'states': {
+                'main': {
+                    'screen': {
+                        'title': 'Output',
+                        'content': {
+                            'type': 'text',
+                            'scrollable': True,
+                            'lines': [
+                                {'text': '%s\nTail marker' % ('0123456789' * 30)},
+                            ],
+                        },
+                        'buttons': {'left': 'Back', 'right': 'Off'},
+                        'keys': {'M1': 'finish'},
+                    },
+                },
+            },
+        }
+
+        act = _start_plugin(ui=ui)
+        assert 'Tail marker' not in act.getCanvas().get_all_text()
+
+        act.callKeyEvent(KEY_DOWN)
+        act.callKeyEvent(KEY_DOWN)
+        assert 'Tail marker' in act.getCanvas().get_all_text()
+
     def test_explicit_up_down_binding_wins_over_default_text_scroll(self):
         ui = {
             'initial_state': 'main',

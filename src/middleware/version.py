@@ -54,32 +54,43 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════
-# Build version — stamped at build time by build_ipk.py
-# Default is the internal dev format. CI overrides via _BUILD_VERSION file.
+# Build metadata — stamped at build time by build_ipk.py
+# Default version is the internal dev format. CI overrides via _BUILD_VERSION.
+# Git hash comes from _BUILD_HASH when available.
 # ═══════════════════════════════════════════════════════════
 _DEFAULT_VERSION = "dev"
+_DEFAULT_BUILD_HASH = "unknown"
 
-def _read_build_version():
-    """Read build version from _BUILD_VERSION file (stamped by build_ipk.py).
 
-    Returns the version string, or _DEFAULT_VERSION if not found.
-    """
-    # Check next to this file (inside the installed app)
+def _read_build_file(filename, default):
+    """Read a build-stamped metadata file next to this module."""
     here = os.path.dirname(os.path.abspath(__file__))
     for candidate in [
-        os.path.join(here, '_BUILD_VERSION'),
-        os.path.join(here, '..', '_BUILD_VERSION'),
+        os.path.join(here, filename),
+        os.path.join(here, '..', filename),
     ]:
         try:
             with open(candidate, 'r') as f:
-                ver = f.read().strip()
-                if ver:
-                    return ver
+                value = f.read().strip()
+                if value:
+                    return value
         except (IOError, OSError):
             pass
-    return _DEFAULT_VERSION
+    return default
+
+
+def _read_build_version():
+    """Read build version from _BUILD_VERSION file (stamped by build_ipk.py)."""
+    return _read_build_file('_BUILD_VERSION', _DEFAULT_VERSION)
+
+
+def _read_build_hash():
+    """Read git build hash from _BUILD_HASH file (stamped by build_ipk.py)."""
+    return _read_build_file('_BUILD_HASH', _DEFAULT_BUILD_HASH)
+
 
 VERSION_STR = _read_build_version()
+BUILD_HASH = _read_build_hash()
 
 # ═══════════════════════════════════════════════════════════
 # Serial number — not used in OSS version
@@ -155,6 +166,11 @@ def getOS():
     CI builds: release tag (e.g. "v0.6.1")
     """
     return VERSION_STR
+
+
+def getBuildHash():
+    """Get the git commit hash stamped into this build."""
+    return BUILD_HASH
 
 
 def getPM():

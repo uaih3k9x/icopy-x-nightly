@@ -41,6 +41,8 @@ Source key:
     CONST = src/lib/_constants.py (all pixel values)
 """
 
+import textwrap
+
 from . import _constants as C
 
 
@@ -55,6 +57,64 @@ TAG_BUTTON_BAR = "button_bar"
 TAG_BUTTON_LEFT = "button_left"
 TAG_BUTTON_RIGHT = "button_right"
 TAG_TOAST = "toast"
+
+
+TEXT_SCROLL_BOTTOM_PAD = 20
+TEXT_LINE_HEIGHTS = {"normal": 16, "large": 24}
+TEXT_CHAR_WIDTHS = {"normal": 6, "large": 8}
+
+
+def _text_scroll_bottom(content):
+    return _safe_int(content.get("bottom"), C.BTN_BAR_Y0 - TEXT_SCROLL_BOTTOM_PAD)
+
+
+def _text_scroll_page_size(content):
+    lines = content.get("lines", [])
+    size = "normal"
+    if lines:
+        first = lines[0]
+        if isinstance(first, dict):
+            size = first.get("size", "normal")
+
+    line_h = TEXT_LINE_HEIGHTS.get(size, TEXT_LINE_HEIGHTS["normal"])
+    top = _safe_int(content.get("y", C.CONTENT_Y0 + 10), C.CONTENT_Y0 + 10)
+    bottom = _text_scroll_bottom(content)
+    max_rows = max(1, (bottom - top) // line_h)
+    explicit = _safe_int(content.get("page_size", 0), 0)
+    if explicit > 0:
+        return max(1, min(explicit, max_rows))
+    return max_rows
+
+
+def _expand_text_rows(lines, state):
+    rows = []
+    wrap_w = C.SCREEN_W - 30
+    for line_def in lines:
+        if isinstance(line_def, str):
+            line_def = {"text": line_def}
+
+        text = _resolve_text(line_def.get("text", ""), state)
+        size = line_def.get("size", "normal")
+        max_chars = max(1, int(wrap_w // TEXT_CHAR_WIDTHS.get(size, 6)))
+
+        for sub_line in str(text).split("\n"):
+            if sub_line == "":
+                wrapped_lines = [""]
+            else:
+                wrapped_lines = textwrap.wrap(
+                    sub_line,
+                    width=max_chars,
+                    replace_whitespace=False,
+                    drop_whitespace=False,
+                    break_long_words=True,
+                    break_on_hyphens=False,
+                ) or [""]
+
+            for wrapped in wrapped_lines:
+                item = dict(line_def)
+                item["text"] = wrapped
+                rows.append(item)
+    return rows
 
 
 class Renderer:
@@ -572,23 +632,14 @@ def _render_text(canvas, content, state):
     Supports size ("large", "normal") and align ("center", "left").
     """
     lines = content.get("lines", [])
-    y = C.CONTENT_Y0 + 10
+    y = _safe_int(content.get("y", C.CONTENT_Y0 + 10), C.CONTENT_Y0 + 10)
     scrollable = bool(content.get("scrollable"))
+    scroll_bottom = None
     if scrollable:
         scroll_offset = _safe_int(content.get("scroll_offset", 0), 0)
-        page_size = _safe_int(content.get("page_size", 0), 0)
-        if page_size <= 0:
-            page_size = 9
-
-        expanded = []
-        for line_def in lines:
-            if isinstance(line_def, str):
-                line_def = {"text": line_def}
-            text = _resolve_text(line_def.get("text", ""), state)
-            for sub_line in str(text).split("\n"):
-                item = dict(line_def)
-                item["text"] = sub_line
-                expanded.append(item)
+        page_size = _text_scroll_page_size(content)
+        scroll_bottom = _text_scroll_bottom(content)
+        expanded = _expand_text_rows(lines, state)
 
         max_offset = max(0, len(expanded) - page_size)
         scroll_offset = max(0, min(scroll_offset, max_offset))
@@ -601,8 +652,9 @@ def _render_text(canvas, content, state):
                 anchor="n", tags=(TAG_CONTENT,),
             )
         if scroll_offset + page_size < len(expanded):
+            arrow_y = min(C.BTN_BAR_Y0 - 4, scroll_bottom + 10)
             canvas.create_text(
-                C.SCREEN_W // 2, C.BTN_BAR_Y0 - 2, text="\u25bc",
+                C.SCREEN_W // 2, arrow_y, text="\u25bc",
                 fill=C.PAGE_INDICATOR_COLOR, font=C.FONT_PROGRESS,
                 anchor="s", tags=(TAG_CONTENT,),
             )
@@ -628,6 +680,9 @@ def _render_text(canvas, content, state):
         else:
             x = 15
             anchor = "nw"
+
+        if scrollable and scroll_bottom is not None and y + line_h > scroll_bottom:
+            break
 
         canvas.create_text(
             x, y, text=text,

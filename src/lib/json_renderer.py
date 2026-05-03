@@ -40,6 +40,7 @@ Usage:
 
 import json
 import os
+import textwrap
 
 from lib._constants import (
     SCREEN_W, SCREEN_H,
@@ -81,6 +82,85 @@ from lib._constants import (
     TE_CARET_DATE_Y, TE_CARET_TIME_Y, TE_CARET_FONT_SIZE, TE_CARET_X, TE_CARET_Y,
 )
 from lib import resources
+
+
+TEXT_GUTTER = 15
+SCROLL_TEXT_BOTTOM_PAD = 20
+TEXT_FONT_SIZES = {'normal': 10, 'large': 13, 'xlarge': 28}
+TEXT_LINE_HEIGHTS = {'normal': 16, 'large': 19, 'xlarge': 34}
+TEXT_CHAR_WIDTHS = {'normal': 6, 'large': 8, 'xlarge': 17}
+
+
+def _safe_int(value, default):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def text_scroll_bottom(content):
+    """Return the lower edge for scrollable text, above the softkey bar."""
+    return _safe_int(content.get('bottom'), BTN_BAR_Y0 - SCROLL_TEXT_BOTTOM_PAD)
+
+
+def text_scroll_page_size(content):
+    """Return visible row count for a scrollable text content definition."""
+    lines = content.get('lines', [])
+    size = 'normal'
+    if lines:
+        first = lines[0]
+        if isinstance(first, dict):
+            size = first.get('size', 'normal')
+
+    line_h = TEXT_LINE_HEIGHTS.get(size, TEXT_LINE_HEIGHTS['normal'])
+    top = _safe_int(content.get('y'), CONTENT_Y0 + 10)
+    bottom = text_scroll_bottom(content)
+    max_rows = max(1, (bottom - top) // line_h)
+
+    explicit = _safe_int(content.get('page_size'), 0)
+    if explicit > 0:
+        return max(1, min(explicit, max_rows))
+    return max_rows
+
+
+def expand_text_rows(lines, resolver=None):
+    """Expand text definitions into visual rows for scrollable rendering."""
+    expanded = []
+    for line_def in lines:
+        if isinstance(line_def, str):
+            line_def = {'text': line_def}
+
+        text = line_def.get('text', '')
+        if resolver is not None:
+            text = resolver(text)
+        if text is None:
+            text = ''
+
+        size = line_def.get('size', 'normal')
+        align = line_def.get('align', 'left')
+        wrap_w = _safe_int(line_def.get('width'), SCREEN_W - TEXT_GUTTER * 2)
+        char_w = TEXT_CHAR_WIDTHS.get(size, TEXT_CHAR_WIDTHS['normal'])
+        max_chars = max(1, int(wrap_w // char_w))
+
+        for sub_line in str(text).split('\n'):
+            if sub_line == '':
+                wrapped_lines = ['']
+            else:
+                wrapped_lines = textwrap.wrap(
+                    sub_line,
+                    width=max_chars,
+                    replace_whitespace=False,
+                    drop_whitespace=False,
+                    break_long_words=True,
+                    break_on_hyphens=False,
+                ) or ['']
+
+            for wrapped in wrapped_lines:
+                item = dict(line_def)
+                item['text'] = wrapped
+                item['align'] = align
+                expanded.append(item)
+    return expanded
 
 
 class JsonRenderer:
@@ -413,34 +493,20 @@ class JsonRenderer:
         """
         c = self.canvas
         lines = content.get('lines', [])
-        y = content.get('y', CONTENT_Y0 + 10)
+        y = _safe_int(content.get('y'), CONTENT_Y0 + 10)
         tag = content.get('tag', '_jr_content')
         scrollable = bool(content.get('scrollable'))
         scroll_offset = 0
         page_size = None
+        scroll_bottom = None
         if scrollable:
             try:
                 scroll_offset = int(content.get('scroll_offset', 0))
             except (TypeError, ValueError):
                 scroll_offset = 0
-            try:
-                page_size = int(content.get('page_size', 0))
-            except (TypeError, ValueError):
-                page_size = 0
-            if page_size <= 0:
-                page_size = 9
-
-            expanded = []
-            for line_def in lines:
-                if isinstance(line_def, str):
-                    line_def = {'text': line_def}
-                text = self.resolve(line_def.get('text', ''))
-                if text is None:
-                    text = ''
-                for sub_line in str(text).split('\n'):
-                    item = dict(line_def)
-                    item['text'] = sub_line
-                    expanded.append(item)
+            page_size = text_scroll_page_size(content)
+            scroll_bottom = text_scroll_bottom(content)
+            expanded = expand_text_rows(lines, self.resolve)
 
             max_offset = max(0, len(expanded) - page_size)
             scroll_offset = max(0, min(scroll_offset, max_offset))
@@ -451,7 +517,8 @@ class JsonRenderer:
                               font=resources.get_font(8), anchor='n',
                               tags=tag)
             if scroll_offset + page_size < len(expanded):
-                c.create_text(SCREEN_W // 2, BTN_BAR_Y0 - 2, text='\u25bc',
+                arrow_y = min(BTN_BAR_Y0 - 4, scroll_bottom + 10)
+                c.create_text(SCREEN_W // 2, arrow_y, text='\u25bc',
                               fill=PAGE_INDICATOR_COLOR,
                               font=resources.get_font(8), anchor='s',
                               tags=tag)
@@ -463,27 +530,26 @@ class JsonRenderer:
             size = line_def.get('size', 'normal')
             align = line_def.get('align', 'left')
             color = line_def.get('color', NORMAL_TEXT_COLOR)
-            font_sizes = {'normal': 10, 'large': 13, 'xlarge': 28}
-            line_heights = {'normal': 16, 'large': 19, 'xlarge': 34}
-            fs = font_sizes.get(size, 10)
-            lh = line_heights.get(size, 16)
+            fs = TEXT_FONT_SIZES.get(size, TEXT_FONT_SIZES['normal'])
+            lh = TEXT_LINE_HEIGHTS.get(size, TEXT_LINE_HEIGHTS['normal'])
             font = resources.get_font(fs)
-            _gutter = 15
             if align == 'center':
                 x, anchor = SCREEN_W // 2, 'n'
-                wrap_w = SCREEN_W - _gutter * 2
+                wrap_w = SCREEN_W - TEXT_GUTTER * 2
             else:
-                x, anchor = _gutter, 'nw'
-                wrap_w = SCREEN_W - _gutter * 2
+                x, anchor = TEXT_GUTTER, 'nw'
+                wrap_w = SCREEN_W - TEXT_GUTTER * 2
             # Handle embedded \n — render each sub-line separately
             for sub_line in text.split('\n'):
+                if scrollable and scroll_bottom is not None and y + lh > scroll_bottom:
+                    return
                 if sub_line.strip() or text == '':
                     tid = c.create_text(x, y, text=sub_line, fill=color,
                                         font=font, anchor=anchor,
                                         width=wrap_w, tags=tag)
                     # Advance y by actual rendered height (may wrap)
                     bbox = c.bbox(tid)
-                    if bbox:
+                    if bbox and bbox[3] > bbox[1]:
                         y += bbox[3] - bbox[1]
                     else:
                         y += lh

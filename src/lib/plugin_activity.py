@@ -58,12 +58,12 @@ from lib._constants import (
     KEY_OK,
     KEY_M1,
     KEY_M2,
-    CONTENT_Y0,
-    BTN_BAR_Y0,
-    SCREEN_W,
-    BG_COLOR,
 )
-from lib.json_renderer import JsonRenderer
+from lib.json_renderer import (
+    JsonRenderer,
+    expand_text_rows,
+    text_scroll_page_size,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -624,51 +624,16 @@ class PluginActivity(BaseActivity):
         return True
 
     def _text_line_count(self, content):
-        """Return the number of logical lines after placeholder expansion."""
+        """Return the number of visible text rows after wrapping."""
         return len(self._expanded_text_lines(content))
 
     def _expanded_text_lines(self, content):
-        lines = []
-        for line_def in content.get('lines', []):
-            if isinstance(line_def, str):
-                text = line_def
-            else:
-                text = line_def.get('text', '')
-            if self._renderer is not None:
-                text = self._renderer.resolve(text)
-            if text is None:
-                text = ''
-            for sub_line in str(text).split('\n'):
-                lines.append(sub_line)
-        return lines
+        resolver = self._renderer.resolve if self._renderer is not None else None
+        return expand_text_rows(content.get('lines', []), resolver)
 
     def _text_page_size(self, content):
         """Estimate how many normal text rows fit in the content area."""
-        try:
-            explicit = int(content.get('page_size', 0))
-            if explicit > 0:
-                return explicit
-        except (TypeError, ValueError):
-            pass
-
-        size = 'normal'
-        lines = content.get('lines', [])
-        if lines:
-            first = lines[0]
-            if isinstance(first, dict):
-                size = first.get('size', 'normal')
-        line_heights = {'normal': 16, 'large': 19, 'xlarge': 34}
-        line_h = line_heights.get(size, 16)
-
-        try:
-            top = int(content.get('y', CONTENT_Y0 + 10))
-        except (TypeError, ValueError):
-            top = CONTENT_Y0 + 10
-        try:
-            bottom = int(content.get('bottom', BTN_BAR_Y0 - 4))
-        except (TypeError, ValueError):
-            bottom = BTN_BAR_Y0 - 4
-        return max(1, (bottom - top) // line_h)
+        return text_scroll_page_size(content)
 
     # ------------------------------------------------------------------
     # Screen stack (push/pop within plugin screens)

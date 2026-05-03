@@ -892,6 +892,35 @@ class TestTextContent:
         assert "\u25b2" in texts
         assert "\u25bc" in texts
 
+    def test_scrollable_text_default_page_stays_above_buttons(self, canvas, renderer):
+        content = {
+            "type": "text",
+            "scrollable": True,
+            "lines": [
+                {"text": "\n".join("Line %d" % i for i in range(12))},
+            ],
+        }
+        renderer.render_content(content)
+        texts = canvas.get_all_text()
+
+        assert "Line 7" in texts
+        assert "Line 8" not in texts
+        assert "\u25bc" in texts
+
+    def test_scrollable_text_wraps_long_lines_before_paging(self, canvas, renderer):
+        content = {
+            "type": "text",
+            "scrollable": True,
+            "scroll_offset": 2,
+            "lines": [
+                {"text": "%s\nTail marker" % ("0123456789" * 30)},
+            ],
+        }
+        renderer.render_content(content)
+        texts = canvas.get_all_text()
+
+        assert "Tail marker" in texts
+
 
 # =========================================================================
 # Content type: input

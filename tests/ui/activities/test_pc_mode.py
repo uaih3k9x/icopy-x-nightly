@@ -55,6 +55,9 @@ def install_stubs():
     gadget_mod = types.ModuleType('gadget_linux')
     gadget_mod.upan_and_serial = lambda: None
     gadget_mod.kill_all_module = lambda: None
+    gadget_mod.is_rescue_usb_active = lambda: False
+    gadget_mod.suspend_rescue_usb = lambda: False
+    gadget_mod.resume_rescue_usb = lambda background=True: False
     sys.modules['gadget_linux'] = gadget_mod
 
     # executor stub
@@ -237,3 +240,39 @@ class TestPCModeActivity:
         assert act.get_state() == 'idle'
         act.onKeyEvent(KEY_DOWN)
         assert act.get_state() == 'idle'
+
+    def test_rescue_usb_suspended_and_resumed_when_active(self, install_stubs):
+        """Active rescue USB is stopped for PC mode and restarted on exit."""
+        calls = []
+        gadget_mod = sys.modules['gadget_linux']
+        gadget_mod.is_rescue_usb_active = lambda: True
+        gadget_mod.suspend_rescue_usb = lambda: calls.append('suspend') or True
+        gadget_mod.resume_rescue_usb = (
+            lambda background=True: calls.append(('resume', background)) or True
+        )
+
+        act = _create_pcmode()
+        act._suspend_rescue_usb_if_needed()
+        assert act._resume_rescue_usb is True
+        assert calls == ['suspend']
+
+        act._resume_rescue_usb_if_needed()
+        assert act._resume_rescue_usb is False
+        assert calls == ['suspend', ('resume', True)]
+
+    def test_rescue_usb_not_resumed_when_inactive(self, install_stubs):
+        """Inactive rescue USB is left alone."""
+        calls = []
+        gadget_mod = sys.modules['gadget_linux']
+        gadget_mod.is_rescue_usb_active = lambda: False
+        gadget_mod.suspend_rescue_usb = lambda: calls.append('suspend') or True
+        gadget_mod.resume_rescue_usb = (
+            lambda background=True: calls.append(('resume', background)) or True
+        )
+
+        act = _create_pcmode()
+        act._suspend_rescue_usb_if_needed()
+        act._resume_rescue_usb_if_needed()
+
+        assert act._resume_rescue_usb is False
+        assert calls == []
