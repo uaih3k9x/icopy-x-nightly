@@ -870,6 +870,28 @@ class TestTextContent:
                       if it["type"] == "text" and it["options"]["text"] == "Check color"]
         assert text_items[0]["options"]["fill"] == C.BTN_TEXT_COLOR
 
+    def test_scrollable_text_renders_visible_window(self, canvas, renderer):
+        content = {
+            "type": "text",
+            "scrollable": True,
+            "scroll_offset": 2,
+            "page_size": 3,
+            "lines": [
+                {"text": "Line 0\nLine 1\nLine 2\nLine 3\nLine 4\nLine 5"},
+            ],
+        }
+        renderer.render_content(content)
+        texts = canvas.get_all_text()
+
+        assert "Line 0" not in texts
+        assert "Line 1" not in texts
+        assert "Line 2" in texts
+        assert "Line 3" in texts
+        assert "Line 4" in texts
+        assert "Line 5" not in texts
+        assert "\u25b2" in texts
+        assert "\u25bc" in texts
+
 
 # =========================================================================
 # Content type: input

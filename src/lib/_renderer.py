@@ -573,6 +573,39 @@ def _render_text(canvas, content, state):
     """
     lines = content.get("lines", [])
     y = C.CONTENT_Y0 + 10
+    scrollable = bool(content.get("scrollable"))
+    if scrollable:
+        scroll_offset = _safe_int(content.get("scroll_offset", 0), 0)
+        page_size = _safe_int(content.get("page_size", 0), 0)
+        if page_size <= 0:
+            page_size = 9
+
+        expanded = []
+        for line_def in lines:
+            if isinstance(line_def, str):
+                line_def = {"text": line_def}
+            text = _resolve_text(line_def.get("text", ""), state)
+            for sub_line in str(text).split("\n"):
+                item = dict(line_def)
+                item["text"] = sub_line
+                expanded.append(item)
+
+        max_offset = max(0, len(expanded) - page_size)
+        scroll_offset = max(0, min(scroll_offset, max_offset))
+        lines = expanded[scroll_offset:scroll_offset + page_size]
+
+        if scroll_offset > 0:
+            canvas.create_text(
+                C.SCREEN_W // 2, C.CONTENT_Y0 + 2, text="\u25b2",
+                fill=C.PAGE_INDICATOR_COLOR, font=C.FONT_PROGRESS,
+                anchor="n", tags=(TAG_CONTENT,),
+            )
+        if scroll_offset + page_size < len(expanded):
+            canvas.create_text(
+                C.SCREEN_W // 2, C.BTN_BAR_Y0 - 2, text="\u25bc",
+                fill=C.PAGE_INDICATOR_COLOR, font=C.FONT_PROGRESS,
+                anchor="s", tags=(TAG_CONTENT,),
+            )
 
     for line_def in lines:
         if isinstance(line_def, str):
@@ -762,3 +795,10 @@ def _resolve_int(raw, state):
         except (ValueError, TypeError):
             return 0
     return 0
+
+
+def _safe_int(raw, default=0):
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default

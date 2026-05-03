@@ -415,6 +415,46 @@ class JsonRenderer:
         lines = content.get('lines', [])
         y = content.get('y', CONTENT_Y0 + 10)
         tag = content.get('tag', '_jr_content')
+        scrollable = bool(content.get('scrollable'))
+        scroll_offset = 0
+        page_size = None
+        if scrollable:
+            try:
+                scroll_offset = int(content.get('scroll_offset', 0))
+            except (TypeError, ValueError):
+                scroll_offset = 0
+            try:
+                page_size = int(content.get('page_size', 0))
+            except (TypeError, ValueError):
+                page_size = 0
+            if page_size <= 0:
+                page_size = 9
+
+            expanded = []
+            for line_def in lines:
+                if isinstance(line_def, str):
+                    line_def = {'text': line_def}
+                text = self.resolve(line_def.get('text', ''))
+                if text is None:
+                    text = ''
+                for sub_line in str(text).split('\n'):
+                    item = dict(line_def)
+                    item['text'] = sub_line
+                    expanded.append(item)
+
+            max_offset = max(0, len(expanded) - page_size)
+            scroll_offset = max(0, min(scroll_offset, max_offset))
+            lines = expanded[scroll_offset:scroll_offset + page_size]
+            if scroll_offset > 0:
+                c.create_text(SCREEN_W // 2, CONTENT_Y0 + 2, text='\u25b2',
+                              fill=PAGE_INDICATOR_COLOR,
+                              font=resources.get_font(8), anchor='n',
+                              tags=tag)
+            if scroll_offset + page_size < len(expanded):
+                c.create_text(SCREEN_W // 2, BTN_BAR_Y0 - 2, text='\u25bc',
+                              fill=PAGE_INDICATOR_COLOR,
+                              font=resources.get_font(8), anchor='s',
+                              tags=tag)
 
         for line_def in lines:
             if isinstance(line_def, str):
