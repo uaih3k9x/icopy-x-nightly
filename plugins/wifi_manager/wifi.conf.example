@@ -1,0 +1,19 @@
+# Put a copy of this file at /mnt/upan/wifi.conf on the device.
+# Do not commit real Wi-Fi passwords.
+#
+# Minimal WPA/WPA2 config:
+ssid=YourWiFiName
+psk=YourWiFiPassword
+driver=wext
+
+# Optional. Leave driver blank for auto-detect, but for RTL8188EU / r8188eu
+# wext is usually the safest backend.
+
+# Optional. Use this if multiple wireless adapters are present.
+# iface=wlx085700b4efc9
+
+# Optional. Use for hidden SSIDs.
+# hidden=1
+
+# Optional. Open network, no password:
+# key_mgmt=NONE

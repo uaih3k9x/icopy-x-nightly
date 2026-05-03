@@ -1,0 +1,9 @@
+{
+    "name": "WiFi Manager",
+    "version": "1.0.0",
+    "author": "uaih3k9x",
+    "description": "Scan and connect USB Wi-Fi without persistent system changes",
+    "entry_class": "WiFiManagerPlugin",
+    "permissions": ["shell"],
+    "order": 97
+}

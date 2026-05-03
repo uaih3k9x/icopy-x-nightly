@@ -1,0 +1,76 @@
+{
+    "plugin": true,
+    "name": "Diag Dump",
+    "version": "1.0.0",
+    "initial_state": "idle",
+    "states": {
+        "idle": {
+            "screen": {
+                "title": "Diag Dump",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "Dump system diagnostics to USB.", "size": "normal"},
+                        {"text": ""},
+                        {"text": "Includes dmesg, wlan, lsusb, lspci, modules.", "size": "normal"},
+                        {"text": ""},
+                        {"text": "Press OK to collect.", "size": "normal"}
+                    ]
+                },
+                "buttons": {"left": "Back", "right": null},
+                "keys": {
+                    "OK": "run:do_dump",
+                    "M1": "finish"
+                }
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "done": {
+            "screen": {
+                "title": "Diag Dump",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{summary}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Again"},
+                "keys": {
+                    "OK": "run:do_dump",
+                    "M1": "finish",
+                    "M2": "run:do_dump"
+                }
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "error": {
+            "screen": {
+                "title": "Diag Dump",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{error_msg}", "size": "normal"},
+                        {"text": ""},
+                        {"text": "Press OK to retry.", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Retry"},
+                "keys": {
+                    "OK": "set_state:idle",
+                    "M1": "finish",
+                    "M2": "set_state:idle"
+                }
+            }
+        }
+    }
+}

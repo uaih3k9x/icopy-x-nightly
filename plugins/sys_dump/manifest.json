@@ -1,0 +1,9 @@
+{
+    "name": "Diag Dump",
+    "version": "1.0.0",
+    "author": "uaih3k9x",
+    "description": "Dump dmesg, USB, PCI and WLAN diagnostics",
+    "entry_class": "SysDumpPlugin",
+    "permissions": ["shell"],
+    "order": 98
+}

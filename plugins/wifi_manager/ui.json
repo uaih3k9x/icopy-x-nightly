@@ -1,0 +1,128 @@
+{
+    "plugin": true,
+    "name": "WiFi Manager",
+    "version": "1.0.0",
+    "initial_state": "idle",
+    "states": {
+        "idle": {
+            "screen": {
+                "title": "WiFi Manager",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "OK: Scan Wi-Fi", "size": "normal"},
+                        {"text": "M2: Connect config", "size": "normal"},
+                        {"text": ""},
+                        {"text": "Config file:", "size": "normal"},
+                        {"text": "/mnt/upan/wifi.conf", "size": "normal"},
+                        {"text": ""},
+                        {"text": "{status_short}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Connect"},
+                "keys": {
+                    "OK": "run:do_scan",
+                    "M1": "finish",
+                    "M2": "run:do_connect"
+                }
+            },
+            "transitions": {
+                "on_result.status==scan_done": "scan",
+                "on_result.status==connected": "connected",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "scan": {
+            "screen": {
+                "title": "WiFi Scan",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{scan_lines}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Connect"},
+                "keys": {
+                    "OK": "run:do_scan",
+                    "M1": "set_state:idle",
+                    "M2": "run:do_connect"
+                }
+            },
+            "transitions": {
+                "on_result.status==scan_done": "scan",
+                "on_result.status==connected": "connected",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "connected": {
+            "screen": {
+                "title": "WiFi Connected",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{connect_lines}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Off"},
+                "keys": {
+                    "OK": "run:do_status",
+                    "M1": "set_state:idle",
+                    "M2": "run:do_disconnect"
+                }
+            },
+            "transitions": {
+                "on_result.status==connected": "connected",
+                "on_result.status==disconnected": "disconnected",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "disconnected": {
+            "screen": {
+                "title": "WiFi Off",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{disconnect_lines}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Connect"},
+                "keys": {
+                    "OK": "run:do_scan",
+                    "M1": "set_state:idle",
+                    "M2": "run:do_connect"
+                }
+            },
+            "transitions": {
+                "on_result.status==scan_done": "scan",
+                "on_result.status==connected": "connected",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "error": {
+            "screen": {
+                "title": "WiFi Error",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{error_msg}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Retry"},
+                "keys": {
+                    "OK": "set_state:idle",
+                    "M1": "set_state:idle",
+                    "M2": "set_state:idle"
+                }
+            }
+        }
+    }
+}

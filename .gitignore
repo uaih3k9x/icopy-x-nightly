@@ -34,6 +34,8 @@ tests/flows/_results/
 
 # Debug logs
 icopy_debug.log
+diag_log/
+wifi.conf
 .claude/
 .claude/
 .claude/

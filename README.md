@@ -30,6 +30,29 @@ feature requests, logs, dump samples, and reproducible test cases are welcome.
 Use this fork at your own risk. Prefer no-flash builds unless you know exactly
 why you need a flash build.
 
+## Experimental Work in This Fork
+
+This fork currently carries local, in-progress work that is intentionally more
+aggressive than the upstream project:
+
+- Emulator and web-controller tooling for OrbStack/QEMU based UI testing.
+- Plugin hot-reload experiments for faster local development.
+- RootFS backup tooling with progress feedback for boot/rootfs/userdata dumps.
+- Dump Diff tooling for quickly comparing dump outputs while the dump-file
+  format rules are still being refined.
+- Chinese UI resource experiments and local About-page branding.
+- MIFARE Classic full-dump simulation experiments using emulator memory, not
+  only UID/card-number simulation.
+- macOS updater hardening that ignores AppleDouble `._*.ipk` sidecar files so
+  update selection does not fail with misleading `0x05` package errors.
+- USB Wi-Fi bring-up helpers for temporary SSH access without persistent
+  network configuration changes.
+- System diagnostic dump helpers that collect device logs, USB/WLAN inventory,
+  kernel modules, and network state for real-hardware debugging.
+
+Generated IPKs, raw images, screenshots, Wi-Fi passwords, and device diagnostic
+logs are development artifacts and should not be committed here.
+
 ---
 
 # iCopy-X Open
