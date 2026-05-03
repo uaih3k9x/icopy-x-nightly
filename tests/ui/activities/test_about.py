@@ -208,8 +208,20 @@ class TestAboutKeyNavigation:
         assert act.get_page() == 1
         act.onKeyEvent(KEY_DOWN)
         assert act.get_page() == 2
-        act.onKeyEvent(KEY_DOWN)  # should stay at 2
+        act.onKeyEvent(KEY_DOWN)
+        assert act.get_page() == 3
+        act.onKeyEvent(KEY_DOWN)  # should stay at 3
+        assert act.get_page() == 3
+
+    def test_page2_shows_engineering_sample_marker(self):
+        """Page 2 displays the custom sample firmware provenance marker."""
+        act = _make_about()
+        act.onKeyEvent(KEY_DOWN)
+        act.onKeyEvent(KEY_DOWN)
         assert act.get_page() == 2
+        all_text = ' '.join(act.getCanvas().get_all_text())
+        assert '雾雨电信工程样品固件' in all_text
+        assert 'uaih3k9x制作' in all_text
 
     def test_up_clamped_at_zero(self):
         """UP on page 0 does not go below 0."""

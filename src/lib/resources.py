@@ -133,6 +133,8 @@ class StringEN:
         'error': 'Error',
         'searching': 'Searching...',
         'checking': 'Checking...',
+        'about_sample_firmware': '雾雨电信工程样品固件',
+        'about_sample_author': 'uaih3k9x制作',
     }
 
     toastmsg = {
@@ -385,6 +387,8 @@ class StringZH:
         'error': '错误',
         'searching': '搜索中...',
         'checking': '检查中...',
+        'about_sample_firmware': '雾雨电信工程样品固件',
+        'about_sample_author': 'uaih3k9x制作',
     }
 
     toastmsg = {

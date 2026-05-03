@@ -742,7 +742,10 @@ class AboutActivity(BaseActivity):
         - UP = page 0
         - PWR = finish
 
-    Page 2:
+    Page 2 (Engineering Sample):
+        - Build provenance marker for noflash engineering builds.
+
+    Page 3:
         - Embedded scroller easter egg.
 
     Key handling:
@@ -757,7 +760,7 @@ class AboutActivity(BaseActivity):
 
     def __init__(self, bundle=None):
         self._page_new = 0
-        self._page_max = 2
+        self._page_max = 3
         self._btlv = None   # BigTextListView for content
         self._version_info = {}
         self._scroller = None
@@ -886,7 +889,8 @@ class AboutActivity(BaseActivity):
           [1] = page 1 text at (19, 140), fill=black, font=13, anchor=w
           [2] = page indicator at (165, 8), fill=white, font=11, anchor=nw
         Visible page at y=140, other page off-screen at y=500.
-        Page 2 is the embedded scroller easter egg.
+        Page 2 is the engineering sample marker. Page 3 is the embedded
+        scroller easter egg.
         """
         canvas = self.getCanvas()
         if canvas is None:
@@ -939,6 +943,20 @@ class AboutActivity(BaseActivity):
             canvas.create_text(text_x, y_page1, text=page1_text,
                                fill=NORMAL_TEXT_COLOR, font=content_font,
                                anchor='w', width=text_w, tags='about_content')
+            canvas.create_text(ABOUT_PAGE_IND_X, ABOUT_PAGE_IND_Y,
+                               text=page_indicator,
+                               fill=TITLE_TEXT_COLOR, font=ind_font,
+                               anchor='nw', tags='about_content')
+        elif self._page_new == 2:
+            sample_text = (
+                resources.get_str('about_sample_firmware') + '\n\n' +
+                resources.get_str('about_sample_author')
+            )
+            canvas.create_text(SCREEN_W // 2, 132, text=sample_text,
+                               fill=NORMAL_TEXT_COLOR,
+                               font=resources.get_font_force_zh(14),
+                               anchor='center', width=SCREEN_W - 24,
+                               justify='center', tags='about_content')
             canvas.create_text(ABOUT_PAGE_IND_X, ABOUT_PAGE_IND_Y,
                                text=page_indicator,
                                fill=TITLE_TEXT_COLOR, font=ind_font,
@@ -1056,6 +1074,15 @@ class AboutActivity(BaseActivity):
             anchor='center',
             tags='about_text_scroller about_content',
         )
+        canvas.create_text(
+            SCREEN_W // 2, 48,
+            text='雾雨电信工程样品固件\nuaih3k9x制作',
+            fill='#E8E8E8',
+            font=resources.get_font_force_zh(12),
+            anchor='center',
+            justify='center',
+            tags='about_text_scroller about_content',
+        )
         contribs = self._text_scroller_contributors or [
             'icopy-x-community',
             'proxmark3 contributors',
@@ -1069,7 +1096,7 @@ class AboutActivity(BaseActivity):
             chunk += contribs[:page_size - len(chunk)]
 
         canvas.create_text(
-            SCREEN_W // 2, 58,
+            SCREEN_W // 2, 84,
             text='GREETINGS',
             fill=COLOR_ACCENT,
             font=resources.get_font_force_en(11),
@@ -1077,7 +1104,7 @@ class AboutActivity(BaseActivity):
             tags='about_text_scroller about_content',
         )
         canvas.create_text(
-            18, 82,
+            18, 104,
             text='\n'.join(chunk),
             fill='#F6F6F6',
             font=resources.get_font_force_en(9),
