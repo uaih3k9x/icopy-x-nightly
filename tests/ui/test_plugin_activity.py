@@ -185,6 +185,32 @@ class TestKeyDispatch:
         act.callKeyEvent(KEY_OK)
         assert act._current_state_id == 'second'
 
+    def test_call_action_runs_plugin_method_synchronously(self):
+        """call:<method> runs immediately without entering busy state."""
+        ui = {
+            'initial_state': 'main',
+            'states': {
+                'main': {
+                    'screen': {
+                        'title': 'Call Test',
+                        'content': {'type': 'empty'},
+                        'buttons': {'left': 'Back', 'right': 'Do'},
+                        'keys': {'OK': 'call:test_method'},
+                    },
+                },
+            },
+        }
+
+        act = _start_plugin(ui=ui, entry_class=MockPlugin)
+        instance = act._plugin_instance
+
+        act.callKeyEvent(KEY_OK)
+
+        assert instance.called == ['test_method']
+        assert act._current_state_id == 'main'
+        assert act.get_var('status') == 'done'
+        assert not act.isbusy()
+
     def test_title_from_screen(self):
         """Title is set from the screen definition."""
         act = _start_plugin()
