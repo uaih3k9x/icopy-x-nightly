@@ -8,6 +8,7 @@ The default rescue path is network-only:
 - USB CDC-NCM gadget first, then CDC-ECM fallback, then `g_ether` fallback.
 - The NCM-first path is intended to work better with macOS USB Ethernet.
 - Device IP: `192.168.7.2/24`.
+- Link-local device IP: `169.254.7.2/16`.
 - Host/Mac IP: `192.168.7.1/24`.
 - Wi-Fi fallback from `/mnt/upan/wifi.conf` when `wpa_supplicant` exists.
 - No USB mass storage export by default.
@@ -52,6 +53,7 @@ Router:      blank
 Then connect:
 
 ```bash
+ssh root@169.254.7.2
 ssh root@192.168.7.2
 ```
 

@@ -23,8 +23,35 @@ def test_usb_ssh_recovery_script_restarts_rescue_net_and_ssh():
     assert script.startswith('#!/bin/sh\n')
     assert '/usr/local/sbin/icopy-rescue-net.sh restart' in script
     assert '192.168.7.2/24' in script
+    assert '169.254.7.2/16' in script
     assert 'systemctl restart sshd' in script
     assert '/tmp/icopy-update-usb-ssh-recover.log' in script
+
+
+def test_rescue_net_script_is_ncm_first_with_link_local():
+    install = _load_install_module()
+
+    script = install._rescue_net_script()
+
+    assert script.startswith('#!/bin/sh\n')
+    assert 'USB_CIDR=192.168.7.2/24' in script
+    assert 'USB_LL_CIDR=169.254.7.2/16' in script
+    assert 'start_usb_ncm_configfs && return 0' in script
+    assert 'start_usb_ecm_configfs && return 0' in script
+    assert 'start_usb_ether_module' in script
+    assert 'start_sshd' in script
+
+
+def test_rescue_net_service_units_enable_bootstrap():
+    install = _load_install_module()
+
+    unit = install._rescue_net_systemd_unit()
+    initd = install._rescue_net_init_script()
+
+    assert 'Before=multi-user.target icopy.service' in unit
+    assert '/usr/local/sbin/icopy-rescue-net.sh start' in unit
+    assert 'Default-Start:     2 3 4 5' in initd
+    assert 'icopy-rescue-net.sh restart' in initd
 
 
 def test_schedule_usb_ssh_recovery_uses_systemd_run(monkeypatch, tmp_path):

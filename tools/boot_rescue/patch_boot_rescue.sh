@@ -122,6 +122,7 @@ UPAN_PARTITION=/dev/mmcblk0p4
 CONF="$UPAN/wifi.conf"
 USB_IP=192.168.7.2
 USB_MASK=255.255.255.0
+USB_LL_CIDR=169.254.7.2/16
 HOST_MAC=02:00:00:00:00:01
 DEV_MAC=02:00:00:00:00:02
 
@@ -171,10 +172,11 @@ configure_usb_iface() {
             ip link set "$iface" up >> "$LOG" 2>&1 || true
             ip addr flush dev "$iface" >> "$LOG" 2>&1 || true
             ip addr add "$USB_IP/24" dev "$iface" >> "$LOG" 2>&1 || true
+            ip addr add "$USB_LL_CIDR" dev "$iface" >> "$LOG" 2>&1 || true
         else
             ifconfig "$iface" "$USB_IP" netmask "$USB_MASK" up >> "$LOG" 2>&1 || true
         fi
-        log "$iface rescue address: $USB_IP/24"
+        log "$iface rescue address: $USB_IP/24 + $USB_LL_CIDR"
         return 0
     fi
     return 1

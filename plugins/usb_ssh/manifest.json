@@ -1,0 +1,9 @@
+{
+    "name": "USB SSH",
+    "version": "1.0.0",
+    "author": "uaih3k9x",
+    "description": "Manage the USB NCM/ECM SSH bootstrap service",
+    "entry_class": "UsbSshPlugin",
+    "permissions": ["shell", "filesystem"],
+    "order": 34
+}

@@ -46,9 +46,20 @@ Chinese log messages preserved for parity with original .so output:
 """
 
 import os
+import shlex
 import shutil
 import time
 import zipfile
+
+
+_RESCUE_SCRIPT = '/usr/local/sbin/icopy-rescue-net.sh'
+_RESCUE_UNIT = '/etc/systemd/system/icopy-rescue-net.service'
+_RESCUE_UNIT_LINK = (
+    '/etc/systemd/system/multi-user.target.wants/icopy-rescue-net.service'
+)
+_RESCUE_INIT = '/etc/init.d/icopy-rescue-net'
+_RESCUE_ENABLED = '/etc/icopy-rescue-net.enabled'
+_RESCUE_INSTALL_LOG = '/var/log/icopy-rescue-net-install.log'
 
 
 def install_font(unpkg_path, callback):
@@ -211,6 +222,7 @@ def update_permission(unpkg_path, callback):
     # Patch known OS-level stability bugs.
     _patch_gpio_crash_bug()
     _patch_sshd_session_limits()
+    _install_rescue_net_service(enable=True, restart=False, backup=True)
 
     # Remove trojan version.so — it's only needed for checkPkg during
     # install.  At runtime it shadows our version.py (Python loads .so
@@ -319,6 +331,633 @@ def _patch_sshd_session_limits():
 
     except Exception as e:
         print("Could not patch sshd_config: %s" % e)
+
+
+def _write_file(path, content, mode=None):
+    parent = os.path.dirname(path)
+    if parent and not os.path.isdir(parent):
+        os.makedirs(parent, exist_ok=True)
+    with open(path, 'w') as f:
+        f.write(content)
+    if mode is not None:
+        os.chmod(path, mode)
+
+
+def _backup_existing(path):
+    if not os.path.exists(path):
+        return ''
+    stamp = time.strftime('%Y%m%d-%H%M%S')
+    backup = '%s.bak-%s' % (path, stamp)
+    try:
+        shutil.copy2(path, backup)
+        return backup
+    except Exception as e:
+        print("Could not back up %s: %s" % (path, e))
+        return ''
+
+
+def _link_or_copy_unit():
+    try:
+        parent = os.path.dirname(_RESCUE_UNIT_LINK)
+        os.makedirs(parent, exist_ok=True)
+        if os.path.lexists(_RESCUE_UNIT_LINK):
+            os.remove(_RESCUE_UNIT_LINK)
+        os.symlink('../icopy-rescue-net.service', _RESCUE_UNIT_LINK)
+        return
+    except Exception as e:
+        print("Could not symlink rescue unit: %s" % e)
+
+    try:
+        shutil.copy2(_RESCUE_UNIT, _RESCUE_UNIT_LINK)
+    except Exception as e:
+        print("Could not copy rescue unit link fallback: %s" % e)
+
+
+def _install_rescue_net_service(enable=True, restart=True, backup=True):
+    """Install the default USB SSH rescue network service.
+
+    This is intentionally app-installer side, not plugin-only.  SSH is already
+    enabled on target devices; this service provides the first clean network
+    path over USB-C so users do not need OTG Wi-Fi just to reach SSH.
+    """
+    try:
+        for path in (_RESCUE_SCRIPT, _RESCUE_UNIT, _RESCUE_INIT):
+            if backup:
+                _backup_existing(path)
+
+        _write_file(_RESCUE_SCRIPT, _rescue_net_script(), 0o755)
+        _write_file(_RESCUE_UNIT, _rescue_net_systemd_unit(), 0o644)
+        _write_file(_RESCUE_INIT, _rescue_net_init_script(), 0o755)
+
+        for rc in ('2', '3', '4', '5'):
+            link_path = '/etc/rc%s.d/S01icopy-rescue-net' % rc
+            try:
+                os.makedirs(os.path.dirname(link_path), exist_ok=True)
+                if os.path.lexists(link_path):
+                    os.remove(link_path)
+                os.symlink('../init.d/icopy-rescue-net', link_path)
+            except Exception as e:
+                print("Could not create %s: %s" % (link_path, e))
+
+        if enable:
+            _write_file(_RESCUE_ENABLED, '1\n', 0o644)
+            _link_or_copy_unit()
+        elif os.path.exists(_RESCUE_ENABLED):
+            os.remove(_RESCUE_ENABLED)
+
+        _write_file(
+            _RESCUE_INSTALL_LOG,
+            'installed iCopy USB SSH rescue service %s\n' % (
+                time.strftime('%Y-%m-%d %H:%M:%S')),
+            0o644,
+        )
+
+        if restart:
+            _schedule_rescue_net_restart(delay=2)
+        print("Installed USB SSH rescue service")
+        return True
+    except Exception as e:
+        print("Could not install USB SSH rescue service: %s" % e)
+        return False
+
+
+def _schedule_rescue_net_restart(delay=2):
+    unit_name = 'icopy-rescue-net-restart-%s-%s' % (
+        os.getpid(), int(time.time()))
+    script_path = '/tmp/%s.sh' % unit_name
+    script = (
+        '#!/bin/sh\n'
+        'PATH=/sbin:/usr/sbin:/bin:/usr/bin\n'
+        'LOG=/tmp/icopy-rescue-net-restart.log\n'
+        'exec >>"$LOG" 2>&1\n'
+        'echo "[restart] scheduled $(date)"\n'
+        'sleep %d\n'
+        'if [ -x %s ]; then\n'
+        '    echo "[restart] restarting rescue net"\n'
+        '    %s restart\n'
+        'else\n'
+        '    echo "[restart] missing rescue script"\n'
+        'fi\n'
+    ) % (
+        delay,
+        shlex.quote(_RESCUE_SCRIPT),
+        shlex.quote(_RESCUE_SCRIPT),
+    )
+    try:
+        _write_file(script_path, script, 0o755)
+    except Exception as e:
+        print("Could not write rescue restart script: %s" % e)
+        return
+
+    for cmd in (
+        'sudo systemd-run --unit=%s --collect /bin/sh %s' % (
+            unit_name, script_path),
+        'sudo systemd-run --unit=%s /bin/sh %s' % (unit_name, script_path),
+    ):
+        try:
+            if os.system(cmd + ' >/tmp/icopy-rescue-net-schedule.log 2>&1') == 0:
+                print("Scheduled USB SSH restart via systemd-run")
+                return
+        except Exception:
+            pass
+
+    try:
+        os.system(
+            'nohup sudo /bin/sh %s >/tmp/icopy-rescue-net-schedule.log 2>&1 &'
+            % script_path)
+        print("Scheduled USB SSH restart via nohup")
+    except Exception as e:
+        print("Could not schedule USB SSH restart: %s" % e)
+
+
+def _rescue_net_systemd_unit():
+    return (
+        '[Unit]\n'
+        'Description=iCopy-X USB SSH rescue network\n'
+        'DefaultDependencies=no\n'
+        'After=local-fs.target sysinit.target\n'
+        'Wants=local-fs.target\n'
+        'Before=multi-user.target icopy.service\n'
+        '\n'
+        '[Service]\n'
+        'Type=oneshot\n'
+        'ExecStart=/bin/sh -c \'nohup /usr/local/sbin/icopy-rescue-net.sh '
+        'start >/tmp/icopy-rescue-net.out 2>&1 &\'\n'
+        'ExecStop=/usr/local/sbin/icopy-rescue-net.sh stop\n'
+        'RemainAfterExit=yes\n'
+        'TimeoutStartSec=10\n'
+        '\n'
+        '[Install]\n'
+        'WantedBy=multi-user.target\n'
+    )
+
+
+def _rescue_net_init_script():
+    return (
+        '#!/bin/sh\n'
+        '### BEGIN INIT INFO\n'
+        '# Provides:          icopy-rescue-net\n'
+        '# Required-Start:    $local_fs\n'
+        '# Required-Stop:\n'
+        '# Default-Start:     2 3 4 5\n'
+        '# Default-Stop:\n'
+        '# Short-Description: iCopy USB SSH rescue network\n'
+        '### END INIT INFO\n'
+        '\n'
+        'case "$1" in\n'
+        '    start|"")\n'
+        '        nohup /usr/local/sbin/icopy-rescue-net.sh start '
+        '>/tmp/icopy-rescue-net.out 2>&1 &\n'
+        '        ;;\n'
+        '    stop)\n'
+        '        /usr/local/sbin/icopy-rescue-net.sh stop '
+        '>/tmp/icopy-rescue-net.out 2>&1 || true\n'
+        '        ;;\n'
+        '    restart|force-reload)\n'
+        '        /usr/local/sbin/icopy-rescue-net.sh restart '
+        '>/tmp/icopy-rescue-net.out 2>&1 &\n'
+        '        ;;\n'
+        '    status)\n'
+        '        /usr/local/sbin/icopy-rescue-net.sh status\n'
+        '        ;;\n'
+        'esac\n'
+        'exit 0\n'
+    )
+
+
+def _rescue_net_script():
+    return r'''#!/bin/sh
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+LOG=/var/log/icopy-rescue-net.log
+STATE=/tmp/icopy-rescue-net.state
+ENABLED=/etc/icopy-rescue-net.enabled
+UPAN=/mnt/upan
+UPAN_PARTITION=/dev/mmcblk0p4
+CONF="$UPAN/wifi.conf"
+USB_IP=192.168.7.2
+USB_CIDR=192.168.7.2/24
+USB_LL_CIDR=169.254.7.2/16
+USB_MASK=255.255.255.0
+HOST_IP=192.168.7.1
+HOST_MAC=02:00:00:00:00:01
+DEV_MAC=02:00:00:00:00:02
+G=/sys/kernel/config/usb_gadget/icopy_rescue
+
+mkdir -p /var/log /tmp /var/run/wpa_supplicant
+touch "$LOG" 2>/dev/null || LOG=/tmp/icopy-rescue-net.log
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null)] $*" >> "$LOG"
+}
+
+state() {
+    echo "$*" > "$STATE" 2>/dev/null || true
+    log "$*"
+}
+
+cmd_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+is_enabled() {
+    [ -e "$ENABLED" ]
+}
+
+start_sshd() {
+    log "starting ssh service"
+    mkdir -p /var/run/sshd /run/sshd >> "$LOG" 2>&1 || true
+    if [ -x /etc/init.d/ssh ]; then
+        /etc/init.d/ssh start >> "$LOG" 2>&1 || true
+    fi
+    if cmd_exists service; then
+        service ssh start >> "$LOG" 2>&1 || true
+        service sshd start >> "$LOG" 2>&1 || true
+    fi
+    if cmd_exists systemctl; then
+        systemctl start ssh >> "$LOG" 2>&1 || true
+        systemctl start sshd >> "$LOG" 2>&1 || true
+    fi
+    if cmd_exists sshd && ! pgrep -x sshd >/dev/null 2>&1; then
+        /usr/sbin/sshd >> "$LOG" 2>&1 || true
+    fi
+}
+
+wait_for_usb_iface() {
+    iface="$1"
+    for n in 1 2 3 4 5; do
+        [ -e "/sys/class/net/$iface" ] && return 0
+        sleep 1
+    done
+    return 1
+}
+
+addr_present() {
+    iface="$1"
+    cidr="$2"
+    if cmd_exists ip; then
+        ip addr show dev "$iface" 2>/dev/null | grep -q " $cidr"
+    else
+        return 1
+    fi
+}
+
+configure_usb_iface() {
+    iface="$1"
+    if [ ! -e "/sys/class/net/$iface" ]; then
+        return 1
+    fi
+
+    if cmd_exists ip; then
+        ip link set "$iface" up >> "$LOG" 2>&1 || true
+        ip addr flush dev "$iface" >> "$LOG" 2>&1 || true
+        ip addr add "$USB_CIDR" dev "$iface" >> "$LOG" 2>&1 || true
+        addr_present "$iface" "$USB_LL_CIDR" || \
+            ip addr add "$USB_LL_CIDR" dev "$iface" >> "$LOG" 2>&1 || true
+    else
+        ifconfig "$iface" "$USB_IP" netmask "$USB_MASK" up >> "$LOG" 2>&1 || true
+    fi
+    log "$iface rescue address: $USB_CIDR + $USB_LL_CIDR"
+    return 0
+}
+
+prepare_configfs_gadget() {
+    cmd_exists modprobe && modprobe libcomposite >> "$LOG" 2>&1 || true
+
+    if [ ! -d /sys/kernel/config ]; then
+        mkdir -p /sys/kernel/config >> "$LOG" 2>&1 || true
+    fi
+    if ! grep -q ' /sys/kernel/config ' /proc/mounts 2>/dev/null; then
+        mount -t configfs none /sys/kernel/config >> "$LOG" 2>&1 || true
+    fi
+
+    [ -d /sys/kernel/config/usb_gadget ] || {
+        state "configfs usb_gadget unavailable"
+        return 1
+    }
+
+    UDC="$(ls /sys/class/udc 2>/dev/null | head -n 1)"
+    [ -n "$UDC" ] || {
+        state "no USB device controller found"
+        return 1
+    }
+
+    if [ -d "$G" ]; then
+        echo "" > "$G/UDC" 2>> "$LOG" || true
+        rm -f "$G/configs/c.1/ncm.usb0" "$G/configs/c.1/ecm.usb0" \
+            "$G/configs/c.1/rndis.usb0" 2>> "$LOG" || true
+        rmdir "$G/functions/ncm.usb0" "$G/functions/ecm.usb0" \
+            "$G/functions/rndis.usb0" 2>> "$LOG" || true
+    fi
+
+    return 0
+}
+
+start_usb_configfs_function() {
+    kind="$1"
+    label="$2"
+    product="$3"
+    FUNC="$kind.usb0"
+
+    prepare_configfs_gadget || return 1
+
+    mkdir -p "$G" "$G/strings/0x409" "$G/configs/c.1/strings/0x409" \
+        "$G/functions/$FUNC" >> "$LOG" 2>&1 || {
+        state "failed to create $label configfs gadget"
+        return 1
+    }
+
+    echo 0x1d6b > "$G/idVendor" 2>> "$LOG" || true
+    echo 0x0104 > "$G/idProduct" 2>> "$LOG" || true
+    echo 0x0200 > "$G/bcdUSB" 2>> "$LOG" || true
+    echo 0x0100 > "$G/bcdDevice" 2>> "$LOG" || true
+    echo icopy-rescue > "$G/strings/0x409/serialnumber" 2>> "$LOG" || true
+    echo "iCopy-X Rescue" > "$G/strings/0x409/manufacturer" 2>> "$LOG" || true
+    echo "$product" > "$G/strings/0x409/product" 2>> "$LOG" || true
+    echo 120 > "$G/configs/c.1/MaxPower" 2>> "$LOG" || true
+    echo "$label" > "$G/configs/c.1/strings/0x409/configuration" 2>> "$LOG" || true
+    echo "$HOST_MAC" > "$G/functions/$FUNC/host_addr" 2>> "$LOG" || true
+    echo "$DEV_MAC" > "$G/functions/$FUNC/dev_addr" 2>> "$LOG" || true
+
+    if [ ! -e "$G/configs/c.1/$FUNC" ]; then
+        ln -s "$G/functions/$FUNC" "$G/configs/c.1/" >> "$LOG" 2>&1 || {
+            state "failed to link $label function"
+            return 1
+        }
+    fi
+
+    echo "$UDC" > "$G/UDC" 2>> "$LOG" || {
+        state "failed to bind $label gadget to $UDC"
+        return 1
+    }
+
+    if wait_for_usb_iface usb0; then
+        configure_usb_iface usb0
+        state "USB $label active on $UDC"
+        return 0
+    fi
+
+    state "$label gadget bound but usb0 did not appear"
+    return 1
+}
+
+start_usb_ncm_configfs() {
+    start_usb_configfs_function ncm "CDC NCM" "iCopy-X Rescue NCM"
+}
+
+start_usb_ecm_configfs() {
+    start_usb_configfs_function ecm "CDC ECM" "iCopy-X Rescue ECM"
+}
+
+start_usb_ether_module() {
+    cmd_exists modprobe || return 1
+    modprobe g_ether host_addr="$HOST_MAC" dev_addr="$DEV_MAC" >> "$LOG" 2>&1 || {
+        state "g_ether modprobe failed"
+        return 1
+    }
+
+    if wait_for_usb_iface usb0; then
+        configure_usb_iface usb0
+        state "USB g_ether active"
+        return 0
+    fi
+
+    state "g_ether loaded but usb0 did not appear"
+    return 1
+}
+
+start_usb_ether() {
+    state "starting USB SSH rescue"
+    for mod in g_acm_ms g_mass_storage g_serial g_ether; do
+        modprobe -r "$mod" >> "$LOG" 2>&1 || true
+    done
+
+    start_usb_ncm_configfs && return 0
+    log "falling back to CDC ECM configfs"
+    start_usb_ecm_configfs && return 0
+    log "falling back to g_ether module"
+    start_usb_ether_module
+}
+
+stop_usb_ether() {
+    log "stopping USB SSH rescue"
+    if [ -d "$G" ]; then
+        echo "" > "$G/UDC" 2>> "$LOG" || true
+    fi
+    if [ -e /sys/class/net/usb0 ]; then
+        if cmd_exists ip; then
+            ip link set usb0 down >> "$LOG" 2>&1 || true
+        else
+            ifconfig usb0 down >> "$LOG" 2>&1 || true
+        fi
+    fi
+    modprobe -r g_ether >> "$LOG" 2>&1 || true
+    state "USB SSH rescue stopped"
+}
+
+get_conf_value() {
+    key="$1"
+    [ -f "$CONF" ] || return 1
+    sed -n "s/^[[:space:]]*$key[[:space:]]*=[[:space:]]*//p" "$CONF" \
+        | sed 's/[[:space:]]*$//' | tail -n 1
+}
+
+escape_wpa() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+ensure_upan_mounted() {
+    [ -f "$CONF" ] && return 0
+    mkdir -p "$UPAN" >> "$LOG" 2>&1 || true
+
+    if grep -q " $UPAN " /proc/mounts 2>/dev/null; then
+        return 0
+    fi
+
+    for n in 1 2 3 4 5; do
+        [ -b "$UPAN_PARTITION" ] && break
+        sleep 1
+    done
+
+    if [ -b "$UPAN_PARTITION" ]; then
+        mount -o rw "$UPAN_PARTITION" "$UPAN" >> "$LOG" 2>&1 || true
+    fi
+}
+
+select_wifi_iface() {
+    conf_iface="$(get_conf_value iface || true)"
+    if [ -n "$conf_iface" ] && [ -d "/sys/class/net/$conf_iface" ]; then
+        echo "$conf_iface"
+        return 0
+    fi
+    for iface in wlan0 wlx* ra0; do
+        [ -d "/sys/class/net/$iface" ] && { echo "$iface"; return 0; }
+    done
+    for path in /sys/class/net/*; do
+        [ -e "$path" ] || continue
+        iface="${path##*/}"
+        case "$iface" in
+            lo|eth*|usb*|sit*|tun*|tap*) ;;
+            *) echo "$iface"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+write_wpa_conf() {
+    iface="$1"
+    ssid="$(get_conf_value ssid || true)"
+    psk="$(get_conf_value psk || true)"
+    key_mgmt="$(get_conf_value key_mgmt || true)"
+    hidden="$(get_conf_value hidden || true)"
+    wpa_conf="/tmp/icopy-rescue-wpa-$iface.conf"
+
+    [ -n "$ssid" ] || return 1
+
+    {
+        echo "ctrl_interface=/var/run/wpa_supplicant"
+        echo "network={"
+        echo "    ssid=\"$(escape_wpa "$ssid")\""
+        if [ "$key_mgmt" = "NONE" ]; then
+            echo "    key_mgmt=NONE"
+        else
+            echo "    psk=\"$(escape_wpa "$psk")\""
+        fi
+        [ "$hidden" = "1" ] && echo "    scan_ssid=1"
+        echo "}"
+    } > "$wpa_conf"
+    chmod 600 "$wpa_conf" 2>/dev/null || true
+    echo "$wpa_conf"
+}
+
+run_dhcp() {
+    iface="$1"
+    if cmd_exists dhclient; then
+        dhclient -r "$iface" >> "$LOG" 2>&1 || true
+        dhclient -v -1 "$iface" >> "$LOG" 2>&1 || true
+    elif cmd_exists udhcpc; then
+        udhcpc -i "$iface" -n -q -t 5 >> "$LOG" 2>&1 || true
+    fi
+}
+
+start_wifi() {
+    ensure_upan_mounted
+    [ -f "$CONF" ] || return 0
+    cmd_exists wpa_supplicant || {
+        log "wifi.conf present but wpa_supplicant missing"
+        return 0
+    }
+
+    iface="$(select_wifi_iface || true)"
+    [ -n "$iface" ] || {
+        log "wifi.conf present but no wireless iface found"
+        return 0
+    }
+
+    wpa_conf="$(write_wpa_conf "$iface" || true)"
+    [ -n "$wpa_conf" ] || {
+        log "wifi.conf missing ssid"
+        return 0
+    }
+
+    driver="$(get_conf_value driver || true)"
+    [ -n "$driver" ] || driver=nl80211,wext
+    ip link set "$iface" up >> "$LOG" 2>&1 || true
+    pkill -f "wpa_supplicant.*-i $iface" >> "$LOG" 2>&1 || true
+    wpa_supplicant -B -i "$iface" -c "$wpa_conf" -D "$driver" \
+        -f "/tmp/icopy-rescue-wpa-$iface.log" >> "$LOG" 2>&1 || {
+        log "wpa_supplicant start failed with driver $driver"
+        return 1
+    }
+
+    for n in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 2
+        if cmd_exists wpa_cli; then
+            wpa_cli -i "$iface" status >> "$LOG" 2>&1 || true
+        fi
+        if iwconfig "$iface" 2>/dev/null | grep -qv 'Not-Associated'; then
+            break
+        fi
+    done
+
+    run_dhcp "$iface"
+    if cmd_exists ip; then
+        ip addr show "$iface" >> "$LOG" 2>&1 || true
+    else
+        ifconfig "$iface" >> "$LOG" 2>&1 || true
+    fi
+}
+
+print_status() {
+    echo "enabled=$([ -e "$ENABLED" ] && echo yes || echo no)"
+    echo "state=$(cat "$STATE" 2>/dev/null || echo unknown)"
+    if [ -e /sys/class/net/usb0 ]; then
+        echo "usb0=present"
+        if cmd_exists ip; then
+            ip -o -4 addr show dev usb0 2>/dev/null || true
+        else
+            ifconfig usb0 2>/dev/null || true
+        fi
+        for f in operstate carrier address; do
+            p="/sys/class/net/usb0/$f"
+            [ -e "$p" ] && printf "%s=" "$f" && cat "$p"
+        done
+    else
+        echo "usb0=missing"
+    fi
+    if [ -e "$G/UDC" ]; then
+        printf "UDC="
+        cat "$G/UDC"
+    fi
+    if [ -d "$G/functions" ]; then
+        printf "functions="
+        ls "$G/functions" 2>/dev/null | tr '\n' ' '
+        echo
+    fi
+}
+
+case "${1:-start}" in
+    start)
+        if ! is_enabled; then
+            state "USB SSH rescue disabled"
+            exit 0
+        fi
+        log "iCopy USB SSH rescue starting"
+        start_sshd
+        start_usb_ether
+        start_wifi
+        start_sshd
+        log "iCopy USB SSH rescue done"
+        ;;
+    stop)
+        stop_usb_ether
+        ;;
+    restart|force-reload)
+        stop_usb_ether
+        "$0" start
+        ;;
+    status)
+        print_status
+        if [ -e /sys/class/net/usb0 ]; then
+            configure_usb_iface usb0 >/dev/null 2>&1 || true
+            exit 0
+        fi
+        exit 1
+        ;;
+    enable)
+        touch "$ENABLED"
+        state "USB SSH rescue enabled"
+        ;;
+    disable)
+        rm -f "$ENABLED"
+        stop_usb_ether
+        state "USB SSH rescue disabled"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status|enable|disable}" >&2
+        exit 2
+        ;;
+esac
+'''
 
 
 def install_app(unpkg_path, callback):
@@ -457,7 +1096,9 @@ def _usb_ssh_recovery_script():
         'echo "[recover] ensuring usb0 address"; '
         '(ip link set usb0 up && '
         '(ip addr show dev usb0 | grep -q "192.168.7.2" || '
-        'ip addr add 192.168.7.2/24 dev usb0)) 2>/dev/null || '
+        'ip addr add 192.168.7.2/24 dev usb0) && '
+        '(ip addr show dev usb0 | grep -q "169.254.7.2" || '
+        'ip addr add 169.254.7.2/16 dev usb0)) 2>/dev/null || '
         'ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up 2>/dev/null || true; '
         'fi; '
         'mkdir -p /var/run/sshd /run/sshd 2>/dev/null; '

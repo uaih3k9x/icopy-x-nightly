@@ -80,9 +80,13 @@ aggressive than the upstream project:
 - Boot rescue tooling that can patch the boot initramfs to install a rescue SSH
   network service. The rescue path tries USB CDC-NCM first, then CDC-ECM, then
   `g_ether`, and can also attempt Wi-Fi from `/mnt/upan/wifi.conf`.
+- USB SSH bootstrap is installed by the app updater and enabled by default. It
+  exposes `usb0` on `192.168.7.2/24` and `169.254.7.2/16`, with a `USB SSH`
+  plugin for status, restart, repair, enable/disable, and rollback.
 - Post-update USB SSH recovery.  After installing an IPK, the restart path can
   schedule a short-lived recovery task that restarts the rescue USB network,
-  restores `usb0` to `192.168.7.2/24`, and restarts SSH when available.
+  restores `usb0` to `192.168.7.2/24` plus `169.254.7.2/16`, and restarts SSH
+  when available.
 - Dynamic build metadata. Local IPK builds now stamp both a build version and
   the git commit hash into the package; the About page displays the build hash
   instead of a hardcoded value.
@@ -117,6 +121,8 @@ safer:
   configfs USB gadget state, rescue logs, and full dmesg.
 - IPK install/restart now attempts to recover USB SSH access without requiring
   a physical replug when the rescue network helper is present.
+- The `USB SSH` plugin can repair the helper from the device UI and shows both
+  connection addresses: `ssh root@169.254.7.2` and `ssh root@192.168.7.2`.
 - Lua script output is easier to read on the 240x240 screen and avoids showing
   stale output from the previous script run.
 - Dump Diff now presents dump types as a radio list, which is faster than

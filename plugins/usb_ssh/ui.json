@@ -1,0 +1,296 @@
+{
+    "plugin": true,
+    "name": "USB SSH",
+    "version": "1.0.0",
+    "initial_state": "menu",
+    "states": {
+        "menu": {
+            "screen": {
+                "title": "USB SSH",
+                "content": {
+                    "type": "list",
+                    "page_size": 5,
+                    "items": [
+                        {"label": "Status", "action": "run:do_status"},
+                        {"label": "Restart USB", "action": "set_state:restart"},
+                        {"label": "Repair/Reinstall", "action": "set_state:repair"},
+                        {"label": "Enable at boot", "action": "set_state:enable"},
+                        {"label": "Disable at boot", "action": "set_state:disable"},
+                        {"label": "Stop now", "action": "set_state:stop"},
+                        {"label": "Rollback", "action": "set_state:rollback"}
+                    ]
+                },
+                "buttons": {"left": "Back", "right": "Select"},
+                "keys": {
+                    "UP": "scroll:-1",
+                    "DOWN": "scroll:1",
+                    "OK": "select",
+                    "M1": "finish",
+                    "M2": "select"
+                }
+            },
+            "transitions": {
+                "on_result.status==status": "status",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "status": {
+            "screen": {
+                "title": "USB SSH",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{status_text}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Actions"},
+                "keys": {
+                    "OK": "run:do_status",
+                    "M1": "finish",
+                    "M2": "set_state:menu"
+                }
+            },
+            "transitions": {
+                "on_result.status==status": "status",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "restart": {
+            "on_enter": "run:do_restart",
+            "screen": {
+                "title": "Restarting",
+                "content": {
+                    "type": "progress",
+                    "message": "{progress_message}",
+                    "value": "{progress_value}",
+                    "max": 100
+                },
+                "buttons": {"left": null, "right": null},
+                "keys": {}
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "repair": {
+            "screen": {
+                "title": "Repair USB SSH",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "Rewrite rescue service.", "size": "normal"},
+                        {"text": "USB network may drop.", "size": "normal"},
+                        {"text": "Connect after restart:", "size": "normal"},
+                        {"text": "ssh root@169.254.7.2", "size": "normal"},
+                        {"text": "ssh root@192.168.7.2", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Cancel", "right": "Repair"},
+                "keys": {
+                    "M1": "set_state:menu",
+                    "M2": "set_state:repairing",
+                    "OK": "set_state:repairing"
+                }
+            }
+        },
+        "repairing": {
+            "on_enter": "run:do_repair",
+            "screen": {
+                "title": "Repairing",
+                "content": {
+                    "type": "progress",
+                    "message": "{progress_message}",
+                    "value": "{progress_value}",
+                    "max": 100
+                },
+                "buttons": {"left": null, "right": null},
+                "keys": {}
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "enable": {
+            "on_enter": "run:do_enable",
+            "screen": {
+                "title": "Enabling",
+                "content": {
+                    "type": "progress",
+                    "message": "{progress_message}",
+                    "value": "{progress_value}",
+                    "max": 100
+                },
+                "buttons": {"left": null, "right": null},
+                "keys": {}
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "disable": {
+            "screen": {
+                "title": "Disable USB SSH",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "Disable boot service", "size": "normal"},
+                        {"text": "and stop USB network.", "size": "normal"},
+                        {"text": "SSH over USB will drop.", "size": "normal"}
+                    ]
+                },
+                "buttons": {"left": "Cancel", "right": "Disable"},
+                "keys": {
+                    "M1": "set_state:menu",
+                    "M2": "set_state:disabling",
+                    "OK": "set_state:disabling"
+                }
+            }
+        },
+        "disabling": {
+            "on_enter": "run:do_disable",
+            "screen": {
+                "title": "Disabling",
+                "content": {
+                    "type": "progress",
+                    "message": "{progress_message}",
+                    "value": "{progress_value}",
+                    "max": 100
+                },
+                "buttons": {"left": null, "right": null},
+                "keys": {}
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "stop": {
+            "screen": {
+                "title": "Stop USB SSH",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "Stop current USB network.", "size": "normal"},
+                        {"text": "Boot setting is unchanged.", "size": "normal"},
+                        {"text": "Use Restart to bring it back.", "size": "normal"}
+                    ]
+                },
+                "buttons": {"left": "Cancel", "right": "Stop"},
+                "keys": {
+                    "M1": "set_state:menu",
+                    "M2": "set_state:stopping",
+                    "OK": "set_state:stopping"
+                }
+            }
+        },
+        "stopping": {
+            "on_enter": "run:do_stop",
+            "screen": {
+                "title": "Stopping",
+                "content": {
+                    "type": "progress",
+                    "message": "{progress_message}",
+                    "value": "{progress_value}",
+                    "max": 100
+                },
+                "buttons": {"left": null, "right": null},
+                "keys": {}
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "rollback": {
+            "screen": {
+                "title": "Rollback USB SSH",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "Restore latest .bak-*", "size": "normal"},
+                        {"text": "service files if present.", "size": "normal"},
+                        {"text": "USB network may drop.", "size": "normal"}
+                    ]
+                },
+                "buttons": {"left": "Cancel", "right": "Rollback"},
+                "keys": {
+                    "M1": "set_state:menu",
+                    "M2": "set_state:rolling_back",
+                    "OK": "set_state:rolling_back"
+                }
+            }
+        },
+        "rolling_back": {
+            "on_enter": "run:do_rollback",
+            "screen": {
+                "title": "Rolling Back",
+                "content": {
+                    "type": "progress",
+                    "message": "{progress_message}",
+                    "value": "{progress_value}",
+                    "max": 100
+                },
+                "buttons": {"left": null, "right": null},
+                "keys": {}
+            },
+            "transitions": {
+                "on_result.status==done": "done",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "done": {
+            "screen": {
+                "title": "USB SSH",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{result_text}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Actions"},
+                "keys": {
+                    "OK": "run:do_status",
+                    "M1": "finish",
+                    "M2": "set_state:menu"
+                }
+            },
+            "transitions": {
+                "on_result.status==status": "status",
+                "on_result.status==error": "error",
+                "on_error": "error"
+            }
+        },
+        "error": {
+            "screen": {
+                "title": "USB SSH Error",
+                "content": {
+                    "type": "text",
+                    "lines": [
+                        {"text": "{error_msg}", "size": "normal"}
+                    ],
+                    "scrollable": true
+                },
+                "buttons": {"left": "Back", "right": "Actions"},
+                "keys": {
+                    "OK": "set_state:menu",
+                    "M1": "finish",
+                    "M2": "set_state:menu"
+                }
+            }
+        }
+    }
+}
