@@ -70,12 +70,19 @@ aggressive than the upstream project:
   network configuration changes.
 - System diagnostic dump helpers that collect device logs, USB/WLAN inventory,
   kernel modules, and network state for real-hardware debugging.
+- Diag Dump now includes a small NCM/IP/USB/SSH/dmesg self-check summary before
+  the raw dump.  The on-device plugin page shows only the actionable
+  PASS/WARN/FAIL items, while the saved text file still contains the full
+  command output.
 - PC-Mode USB gadget handoff fixes. When the boot rescue USB network gadget is
   active, PC-Mode now suspends it before loading the ACM+Mass-Storage gadget and
   restores it after PC-Mode exits.
 - Boot rescue tooling that can patch the boot initramfs to install a rescue SSH
   network service. The rescue path tries USB CDC-NCM first, then CDC-ECM, then
   `g_ether`, and can also attempt Wi-Fi from `/mnt/upan/wifi.conf`.
+- Post-update USB SSH recovery.  After installing an IPK, the restart path can
+  schedule a short-lived recovery task that restarts the rescue USB network,
+  restores `usb0` to `192.168.7.2/24`, and restarts SSH when available.
 - Dynamic build metadata. Local IPK builds now stamp both a build version and
   the git commit hash into the package; the About page displays the build hash
   instead of a hardcoded value.
@@ -85,6 +92,13 @@ aggressive than the upstream project:
 - Scrollable plugin text rendering improvements, including wrapping and
   bounded text areas so plugin output can be viewed without overflowing into
   the softkey bar.
+- Lua Script menu and console polish.  Lua scripts can be displayed with
+  translated labels while still running their original filenames, interactive
+  command-line examples are hidden by default, and Lua output uses a compact
+  full-screen console that filters PM3 transport noise.
+- JSON plugin list screens can mirror the selected item into plugin variables
+  and render radio-style selection.  Dump Diff now uses this for direct
+  dump-type selection instead of a cycle button.
 
 Generated IPKs, raw images, screenshots, Wi-Fi passwords, and device diagnostic
 logs are development artifacts and should not be committed here.
@@ -97,6 +111,16 @@ safer:
 - PC-Mode and rescue USB networking no longer silently fight for the same USB
   device controller.
 - No-flash IPKs identify their exact source commit on the About page.
+- `Diag Dump` reports NCM service, `usb0` IP, USB carrier, SSH listener,
+  active USB gadget function, and recent USB/NCM dmesg health at the top of the
+  plugin output.  The raw diagnostic file still includes `ip`, `lsusb`,
+  configfs USB gadget state, rescue logs, and full dmesg.
+- IPK install/restart now attempts to recover USB SSH access without requiring
+  a physical replug when the rescue network helper is present.
+- Lua script output is easier to read on the 240x240 screen and avoids showing
+  stale output from the previous script run.
+- Dump Diff now presents dump types as a radio list, which is faster than
+  cycling through types one at a time.
 - The repo has a documented `nightly -> stable -> main` promotion path.
 - `tools/deploy_ipk_ssh.sh` can upload the latest generated IPK over SSH:
 
@@ -106,6 +130,15 @@ safer:
 
 - `tools/boot_rescue/patch_boot_rescue.sh` can install a rescue SSH network
   service into a mounted boot partition's initramfs.
+
+Latest local no-flash test package from this branch:
+
+```text
+icopy-x-sysdiag-ncm-no-flash.ipk
+Build hash: aaf5810
+Build version: 260504-08.00-Int
+PM3 firmware: unchanged factory firmware
+```
 
 These features are useful, but they are still part of the experimental branch.
 Test on your own device before trusting them.
