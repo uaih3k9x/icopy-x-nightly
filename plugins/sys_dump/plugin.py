@@ -14,14 +14,15 @@
 
 """System diagnostics dump plugin.
 
-Collects read-only system information useful for USB Wi-Fi bring-up:
-dmesg, wlan interfaces, USB/PCI inventory, kernel modules and selected
-Realtek driver metadata.  Output is written to /mnt/upan/diag when the
-USB storage mount is available, with /tmp/icopy_diag as a fallback.
+Collects read-only system information useful for USB/NCM rescue and Wi-Fi
+bring-up: dmesg, network interfaces, USB/PCI inventory, kernel modules and
+selected Realtek driver metadata.  Output is written to /mnt/upan/diag when
+the USB storage mount is available, with /tmp/icopy_diag as a fallback.
 """
 
 import io
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -32,6 +33,12 @@ class SysDumpPlugin(object):
 
     OUTPUT_DIR = '/mnt/upan/diag'
     FALLBACK_DIR = os.path.join(tempfile.gettempdir(), 'icopy_diag')
+    RESCUE_SCRIPT = '/usr/local/sbin/icopy-rescue-net.sh'
+    RESCUE_SERVICE = 'icopy-rescue-net.service'
+    RESCUE_GADGET = '/sys/kernel/config/usb_gadget/icopy_rescue'
+    USB_IFACE = 'usb0'
+    USB_IP = '192.168.7.2'
+    HOST_IP = '192.168.7.1'
 
     COMMANDS = [
         ('date', ['date'], 5),
@@ -52,10 +59,54 @@ class SysDumpPlugin(object):
         ('iwconfig', ['iwconfig'], 8),
         ('rfkill list', ['rfkill', 'list'], 8),
 
+        ('NCM rescue service status', [
+            'sh', '-c',
+            'ls -la /usr/local/sbin/icopy-rescue-net.sh '
+            '/etc/systemd/system/icopy-rescue-net.service '
+            '/etc/init.d/icopy-rescue-net /etc/icopy-rescue-net.enabled '
+            '2>&1; '
+            'systemctl is-active icopy-rescue-net.service 2>&1 || true; '
+            'systemctl is-enabled icopy-rescue-net.service 2>&1 || true; '
+            'service icopy-rescue-net status 2>&1 || true'
+        ], 10),
+        ('NCM rescue logs', [
+            'sh', '-c',
+            'for f in /var/log/icopy-rescue-net.log '
+            '/var/log/icopy-rescue-net-install.log '
+            '/tmp/icopy-rescue-net.out '
+            '/tmp/icopy-update-usb-ssh-recover.log '
+            '/tmp/icopy-update-usb-ssh-schedule.log; do '
+            'echo "--- $f ---"; '
+            'if [ -e "$f" ]; then tail -n 120 "$f"; else echo "(missing)"; fi; '
+            'done'
+        ], 12),
+        ('USB NCM IP state', [
+            'sh', '-c',
+            'ip addr show dev usb0 2>&1 || ifconfig usb0 2>&1 || true; '
+            'for f in operstate carrier address; do '
+            'p=/sys/class/net/usb0/$f; '
+            'if [ -e "$p" ]; then printf "%s: " "$f"; cat "$p"; fi; '
+            'done'
+        ], 8),
+        ('SSH listener state', [
+            'sh', '-c',
+            '(ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null || true); '
+            'ps w | grep -E "[s]shd|[d]ropbear" || true'
+        ], 8),
+
         ('lsusb', ['lsusb'], 10),
         ('lsusb -t', ['lsusb', '-t'], 10),
         ('lspci -nn', ['lspci', '-nn'], 10),
         ('usb sysfs devices', ['ls', '-la', '/sys/bus/usb/devices'], 8),
+        ('USB gadget configfs', [
+            'sh', '-c',
+            'ls -la /sys/class/udc 2>&1; '
+            'find /sys/kernel/config/usb_gadget -maxdepth 4 '
+            '-type d -o -type l -o -type f 2>&1 | sort; '
+            'if [ -e /sys/kernel/config/usb_gadget/icopy_rescue/UDC ]; then '
+            'printf "icopy_rescue UDC: "; '
+            'cat /sys/kernel/config/usb_gadget/icopy_rescue/UDC; fi'
+        ], 12),
         ('pci sysfs devices', ['ls', '-la', '/sys/bus/pci/devices'], 8),
 
         ('lsmod', ['lsmod'], 10),
@@ -96,6 +147,11 @@ class SysDumpPlugin(object):
             'dmesg | grep -Ei '
             '"wlan|wifi|wireless|80211|cfg80211|mac80211|rtl|8188|8192|8811|8812|8814|8821|88xx|usb"'
         ], 20),
+        ('USB/NCM dmesg filter', [
+            'sh', '-c',
+            'dmesg | grep -Ei '
+            '"usb|gadget|ncm|ecm|rndis|g_ether|configfs|udc|dwc|sshd|ttyACM|g_serial|mass_storage|PM3"'
+        ], 20),
         ('dmesg', ['dmesg'], 30),
     ]
 
@@ -126,6 +182,10 @@ class SysDumpPlugin(object):
             lines.append('Detected wireless: %s' % self._join_or_none(wireless))
             lines.append('')
 
+            self._progress(3, 'Self checks')
+            checks = self._run_self_checks(interfaces)
+            lines.extend(self._format_self_check_section(checks))
+
             total = len(self.COMMANDS)
             for idx, (title, cmd, timeout) in enumerate(self.COMMANDS):
                 pct = 5 + int((idx * 90) / max(total, 1))
@@ -136,12 +196,15 @@ class SysDumpPlugin(object):
             self._write_file(path, '\n'.join(lines) + '\n')
 
             short_path = self._display_path(path)
+            check_summary = self._format_summary_checks(checks)
             summary = (
+                '%s\n\n'
                 'Saved diagnostics:\n%s\n\n'
                 'Interfaces: %s\n'
-                'Wireless: %s\n\n'
-                'Includes dmesg, lsusb, lspci, modules and Realtek checks.'
+                'Wireless: %s\n'
+                'Raw: NCM/IP/USB tree/dmesg included.'
             ) % (
+                check_summary,
                 short_path,
                 self._join_or_none(interfaces),
                 self._join_or_none(wireless),
@@ -195,6 +258,235 @@ class SysDumpPlugin(object):
             return -1, '', 'Command timed out after %d seconds' % timeout
         except Exception as exc:
             return -1, '', str(exc)
+
+    def _run_self_checks(self, interfaces):
+        checks = []
+        self._check_rescue_service(checks)
+        self._check_usb_ip(checks, interfaces)
+        self._check_ssh_listener(checks)
+        self._check_usb_gadget(checks)
+        self._check_dmesg_usb(checks)
+        return checks
+
+    def _check_rescue_service(self, checks):
+        if not self._path_exists(self.RESCUE_SCRIPT):
+            checks.append(self._check(
+                'WARN', 'Rescue script',
+                '%s missing' % self.RESCUE_SCRIPT))
+            return
+
+        if not self._path_executable(self.RESCUE_SCRIPT):
+            checks.append(self._check(
+                'WARN', 'Rescue script',
+                '%s exists but is not executable' % self.RESCUE_SCRIPT))
+        else:
+            checks.append(self._check('PASS', 'Rescue script', 'installed'))
+
+        rc, stdout, stderr = self._run_command(
+            ['systemctl', 'is-active', self.RESCUE_SERVICE], 3)
+        active = (stdout or stderr).strip()
+        if rc == 0 and active == 'active':
+            checks.append(self._check('PASS', 'NCM service', 'active'))
+            return
+        if active:
+            checks.append(self._check('WARN', 'NCM service', active))
+            return
+
+        if self._path_exists('/etc/init.d/icopy-rescue-net'):
+            checks.append(self._check('INFO', 'NCM service', 'SysV fallback installed'))
+        else:
+            checks.append(self._check('WARN', 'NCM service', 'service status unknown'))
+
+    def _check_usb_ip(self, checks, interfaces):
+        if self.USB_IFACE not in interfaces:
+            checks.append(self._check('FAIL', 'usb0', 'interface missing'))
+            return
+
+        operstate = self._read_first_line('/sys/class/net/%s/operstate' % self.USB_IFACE)
+        carrier = self._read_first_line('/sys/class/net/%s/carrier' % self.USB_IFACE)
+        rc, stdout, stderr = self._run_command(
+            ['ip', '-o', '-4', 'addr', 'show', 'dev', self.USB_IFACE], 5)
+        addr_text = stdout or stderr
+        addresses = re.findall(r'\binet\s+([0-9.]+/\d+)', addr_text)
+
+        if any(addr.startswith(self.USB_IP + '/') for addr in addresses):
+            detail = '%s (%s)' % (', '.join(addresses), operstate or 'state unknown')
+            checks.append(self._check('PASS', 'usb0 IP', detail))
+        elif addresses:
+            checks.append(self._check(
+                'WARN', 'usb0 IP',
+                'expected %s/24, found %s' % (self.USB_IP, ', '.join(addresses))))
+        else:
+            checks.append(self._check(
+                'FAIL', 'usb0 IP',
+                'missing %s/24' % self.USB_IP))
+
+        if carrier == '1':
+            checks.append(self._check('PASS', 'USB carrier', 'host link detected'))
+        elif carrier == '0':
+            checks.append(self._check(
+                'WARN', 'USB carrier',
+                'no host link; set host IP to %s/24' % self.HOST_IP))
+        else:
+            checks.append(self._check('INFO', 'USB carrier', 'not reported'))
+
+    def _check_ssh_listener(self, checks):
+        rc, stdout, stderr = self._run_command([
+            'sh', '-c',
+            'ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null || true'
+        ], 5)
+        listener_text = stdout or stderr
+        if self._has_port_22_listener(listener_text):
+            checks.append(self._check('PASS', 'SSH', 'listening on port 22'))
+            return
+
+        rc, stdout, stderr = self._run_command([
+            'sh', '-c',
+            'ps w | grep -E "[s]shd|[d]ropbear"'
+        ], 5)
+        process_text = stdout or stderr
+        if rc == 0 and process_text.strip():
+            checks.append(self._check('WARN', 'SSH', 'process exists, listener unclear'))
+        else:
+            checks.append(self._check('FAIL', 'SSH', 'no sshd/dropbear listener seen'))
+
+    def _check_usb_gadget(self, checks):
+        if self._path_exists(self.RESCUE_GADGET):
+            functions = self._list_names(os.path.join(self.RESCUE_GADGET, 'functions'))
+            configs = self._list_names(os.path.join(self.RESCUE_GADGET, 'configs', 'c.1'))
+            udc = self._read_first_line(os.path.join(self.RESCUE_GADGET, 'UDC'))
+            detail_bits = []
+            if functions:
+                detail_bits.append('functions=%s' % ','.join(functions))
+            if configs:
+                detail_bits.append('config=%s' % ','.join(configs))
+            if udc:
+                detail_bits.append('UDC=%s' % udc)
+
+            detail = '; '.join(detail_bits) if detail_bits else 'present but empty'
+            has_net_func = any(
+                name.startswith(('ncm.', 'ecm.', 'rndis.'))
+                for name in functions + configs
+            )
+            if has_net_func and udc:
+                checks.append(self._check('PASS', 'USB gadget', detail))
+            elif has_net_func:
+                checks.append(self._check('WARN', 'USB gadget', detail + '; not bound'))
+            else:
+                checks.append(self._check('WARN', 'USB gadget', detail))
+            return
+
+        modules = self._read_text('/proc/modules')
+        if 'g_ether' in modules:
+            checks.append(self._check('INFO', 'USB gadget', 'g_ether fallback loaded'))
+        else:
+            checks.append(self._check('WARN', 'USB gadget', 'icopy_rescue gadget missing'))
+
+    def _check_dmesg_usb(self, checks):
+        rc, stdout, stderr = self._run_command([
+            'sh', '-c',
+            'out="$(dmesg 2>&1)"; rc=$?; '
+            'if [ "$rc" -ne 0 ]; then echo "$out"; exit "$rc"; fi; '
+            'printf "%s\n" "$out" | tail -n 240 | grep -Ei '
+            '"usb|gadget|ncm|ecm|rndis|g_ether|configfs|udc|dwc|'
+            'sshd|ttyACM|g_serial|mass_storage|PM3" | tail -n 80'
+        ], 8)
+        text = stdout or stderr
+        stripped = text.strip()
+        if rc not in (0, 1) and stripped:
+            checks.append(self._check('WARN', 'dmesg', stripped.splitlines()[-1][:80]))
+            return
+        if not stripped:
+            checks.append(self._check('INFO', 'dmesg', 'no recent USB/NCM lines'))
+            return
+
+        problem_re = re.compile(
+            r'failed|failure|error|unable|no such|busy|timeout|'
+            r'did not appear|cannot|can.t|unavailable',
+            re.IGNORECASE)
+        problems = [line for line in stripped.splitlines() if problem_re.search(line)]
+        reconnects = [
+            line for line in stripped.splitlines()
+            if re.search(r'disconnect|reconnect|reset', line, re.IGNORECASE)
+        ]
+
+        if problems:
+            checks.append(self._check(
+                'WARN', 'dmesg USB',
+                '%d suspicious line(s), latest: %s' % (
+                    len(problems), problems[-1].strip()[:70])))
+        elif reconnects:
+            checks.append(self._check(
+                'WARN', 'dmesg USB',
+                '%d reconnect/reset line(s)' % len(reconnects)))
+        else:
+            checks.append(self._check('PASS', 'dmesg USB', 'no recent USB errors'))
+
+    def _format_self_check_section(self, checks):
+        lines = ['', '===== SELF CHECK SUMMARY =====']
+        for item in checks:
+            lines.append('[%(status)s] %(name)s: %(detail)s' % item)
+        lines.append('')
+        return lines
+
+    def _format_summary_checks(self, checks):
+        priority = ['FAIL', 'WARN', 'PASS', 'INFO']
+        selected = []
+        for status in priority:
+            for item in checks:
+                if item['status'] == status and item not in selected:
+                    selected.append(item)
+                if len(selected) >= 7:
+                    break
+            if len(selected) >= 7:
+                break
+
+        lines = ['Self check: %s' % self._overall_status(checks)]
+        for item in selected:
+            lines.append('[%(status)s] %(name)s: %(detail)s' % item)
+        return '\n'.join(lines)
+
+    def _overall_status(self, checks):
+        statuses = [item['status'] for item in checks]
+        if 'FAIL' in statuses:
+            return 'FAIL'
+        if 'WARN' in statuses:
+            return 'WARN'
+        return 'PASS'
+
+    def _check(self, status, name, detail):
+        return {'status': status, 'name': name, 'detail': detail}
+
+    def _has_port_22_listener(self, text):
+        for line in text.splitlines():
+            if re.search(r'[:.]22(\s|$)', line):
+                return True
+        return False
+
+    def _path_exists(self, path):
+        return os.path.exists(path)
+
+    def _path_executable(self, path):
+        return os.path.isfile(path) and os.access(path, os.X_OK)
+
+    def _read_text(self, path):
+        try:
+            with io.open(path, 'r', encoding='utf-8', errors='replace') as f:
+                return f.read()
+        except Exception:
+            return ''
+
+    def _read_first_line(self, path):
+        text = self._read_text(path)
+        if not text:
+            return ''
+        return text.splitlines()[0].strip()
+
+    def _list_names(self, path):
+        try:
+            return sorted(os.listdir(path))
+        except Exception:
+            return []
 
     def _choose_output_dir(self):
         if os.path.isdir('/mnt/upan'):
