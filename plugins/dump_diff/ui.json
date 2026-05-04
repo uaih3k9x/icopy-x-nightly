@@ -8,18 +8,29 @@
             "screen": {
                 "title": "Dump Diff",
                 "content": {
-                    "type": "text",
-                    "lines": [
-                        {"text": "Compare newest dumps", "size": "large"},
-                        {"text": "M2 cycles type.", "size": "normal"},
-                        {"text": "Current: {dump_type}", "size": "normal"},
-                        {"text": "OK compares newest two.", "size": "normal"}
+                    "type": "list",
+                    "style": "radio",
+                    "page_size": 5,
+                    "selected": 0,
+                    "selected_var": "dump_type_key",
+                    "selected_label_var": "dump_type",
+                    "checked_by_selection": true,
+                    "items": [
+                        {"label": "Mifare Classic", "value": "mf1"},
+                        {"label": "Ultralight/NTAG", "value": "mfu"},
+                        {"label": "T5577", "value": "t55xx"},
+                        {"label": "EM410x", "value": "em410x"},
+                        {"label": "HID", "value": "hid"},
+                        {"label": "ISO15693", "value": "icode"},
+                        {"label": "iClass", "value": "iclass"}
                     ]
                 },
-                "buttons": {"left": "Back", "right": "Type"},
+                "buttons": {"left": "Back", "right": "Compare"},
                 "keys": {
+                    "UP": "scroll:-1",
+                    "DOWN": "scroll:1",
                     "M1": "finish",
-                    "M2": "run:next_type",
+                    "M2": "set_state:running",
                     "OK": "set_state:running"
                 }
             }

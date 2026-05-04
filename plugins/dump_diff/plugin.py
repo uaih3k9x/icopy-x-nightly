@@ -35,6 +35,8 @@ TYPE_ORDER = (
     ("icode", "ISO15693"),
     ("iclass", "iClass"),
 )
+TYPE_LABELS = dict(TYPE_ORDER)
+TYPE_KEYS = [key for key, _label in TYPE_ORDER]
 
 
 class DumpDiffPlugin(object):
@@ -56,6 +58,16 @@ class DumpDiffPlugin(object):
         self.host.set_var("dump_type_key", key)
         self.host.set_var("dump_type", label)
 
+    def _selected_type(self):
+        key = self.host.get_var("dump_type_key", TYPE_ORDER[self._type_index][0])
+        if key not in TYPE_LABELS:
+            key = TYPE_ORDER[0][0]
+        self._type_index = TYPE_KEYS.index(key)
+        label = TYPE_LABELS[key]
+        self.host.set_var("dump_type_key", key)
+        self.host.set_var("dump_type", label)
+        return key, label
+
     def next_type(self):
         """Cycle the target dump directory."""
         self._type_index = (self._type_index + 1) % len(TYPE_ORDER)
@@ -64,12 +76,11 @@ class DumpDiffPlugin(object):
 
     def compare_latest(self):
         """Compare the newest two files for the selected dump type."""
-        self._set_type_label()
+        key, label = self._selected_type()
         self.host.set_var("error_msg", "")
         self.host.set_var("result_text", "")
         self.host.set_progress(5, "Finding dumps...")
 
-        key, label = self._current_type()
         directory = os.path.join(DUMP_ROOT, key)
         try:
             files = self._list_dump_files(directory)

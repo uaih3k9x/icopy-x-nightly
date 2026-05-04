@@ -13,7 +13,18 @@ import pytest
 
 from tests.ui.conftest import MockCanvas
 import actstack
-from _constants import KEY_PWR, KEY_UP, KEY_DOWN, KEY_OK, KEY_M1, KEY_M2
+from _constants import (
+    CHECK_BOX_SIZE,
+    CHECK_COLOR_CHECKED_FILL,
+    CONTENT_Y0,
+    KEY_PWR,
+    KEY_UP,
+    KEY_DOWN,
+    KEY_OK,
+    KEY_M1,
+    KEY_M2,
+    LIST_ITEM_H,
+)
 from plugin_activity import PluginActivity
 
 
@@ -351,6 +362,68 @@ class TestScrollableText:
 
         assert act._current_state_id == 'other'
         assert act._text_scroll_state.get('main', 0) == 0
+
+
+# =====================================================================
+# TestListSelectionState
+# =====================================================================
+
+class TestListSelectionState:
+    """JSON list screens can mirror selection into plugin variables."""
+
+    def test_selected_item_updates_vars_and_radio_check(self):
+        ui = {
+            'initial_state': 'main',
+            'states': {
+                'main': {
+                    'screen': {
+                        'title': '{dump_type}',
+                        'content': {
+                            'type': 'list',
+                            'style': 'radio',
+                            'selected': 0,
+                            'selected_var': 'dump_type_key',
+                            'selected_label_var': 'dump_type',
+                            'checked_by_selection': True,
+                            'items': [
+                                {'label': 'Mifare Classic', 'value': 'mf1'},
+                                {'label': 'Ultralight/NTAG', 'value': 'mfu'},
+                            ],
+                        },
+                        'buttons': {'left': 'Back', 'right': '{dump_type}'},
+                        'keys': {'DOWN': 'scroll:1'},
+                    },
+                },
+            },
+        }
+
+        act = _start_plugin(ui=ui)
+        assert act.get_var('dump_type_key') == 'mf1'
+        assert act.get_var('dump_type') == 'Mifare Classic'
+        assert 'Mifare Classic' in act.getCanvas().get_all_text()
+
+        checked = [
+            item for _iid, item in act.getCanvas().get_items_by_type('rectangle')
+            if item['options'].get('fill') == CHECK_COLOR_CHECKED_FILL
+        ]
+        assert len(checked) == 1
+        assert checked[0]['coords'][1] == (
+            CONTENT_Y0 + LIST_ITEM_H // 2 - CHECK_BOX_SIZE // 2
+        )
+
+        act.callKeyEvent(KEY_DOWN)
+        assert act.get_var('dump_type_key') == 'mfu'
+        assert act.get_var('dump_type') == 'Ultralight/NTAG'
+        assert 'Ultralight/NTAG' in act.getCanvas().get_all_text()
+
+        checked = [
+            item for _iid, item in act.getCanvas().get_items_by_type('rectangle')
+            if item['options'].get('fill') == CHECK_COLOR_CHECKED_FILL
+        ]
+        assert len(checked) == 1
+        assert checked[0]['coords'][1] == (
+            CONTENT_Y0 + LIST_ITEM_H + LIST_ITEM_H // 2 - CHECK_BOX_SIZE // 2
+        )
 
 
 # =====================================================================
