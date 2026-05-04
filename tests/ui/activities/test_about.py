@@ -1,10 +1,10 @@
-"""Tests for AboutActivity — device info display with 2-page navigation.
+"""Tests for AboutActivity — device info display with fork build pages.
 
 Covers:
   - Title bar shows "About"
   - Button labels: empty M1, "Update" M2
   - Version info lines displayed on page 0
-  - Page navigation (UP/DOWN between page 0 and page 1)
+  - Page navigation across device info, update, nightly, and scroller pages
   - M1 navigates to previous page (or no-op on page 0)
   - M2/OK triggers update (would launch UpdateActivity)
   - PWR finishes activity
@@ -63,6 +63,7 @@ def _make_version_mod(**kwargs):
     mod.getOS = lambda: kwargs.get('os', '1.0.90')
     mod.getPM = lambda: kwargs.get('pm', 'v4.17511')
     mod.getSN = lambda: kwargs.get('sn', 'ABC12345')
+    mod.getBuildHash = lambda: kwargs.get('build_hash', 'testhash')
     return mod
 
 
@@ -213,15 +214,25 @@ class TestAboutKeyNavigation:
         act.onKeyEvent(KEY_DOWN)  # should stay at 3
         assert act.get_page() == 3
 
-    def test_page2_shows_engineering_sample_marker(self):
-        """Page 2 displays the custom sample firmware provenance marker."""
-        act = _make_about()
+    def test_page2_shows_nightly_info(self):
+        """Page 2 displays the fork Nightly provenance marker."""
+        mod = _make_version_mod(os='v1.2.2', build_hash='deadbee-dirty')
+        act = _make_about(version_mod=mod)
+        act._load_version_info()
         act.onKeyEvent(KEY_DOWN)
         act.onKeyEvent(KEY_DOWN)
         assert act.get_page() == 2
         all_text = ' '.join(act.getCanvas().get_all_text())
-        assert '雾雨电信工程样品固件' in all_text
-        assert 'uaih3k9x制作' in all_text
+        assert 'iCopy-X Nightly' in all_text
+        assert 'Personal fork build' in all_text
+        assert 'Maintained by uaih3k9x' in all_text
+        assert 'Base: upstream/mainline' in all_text
+        assert 'Install official first' in all_text
+        assert 'Then install this IPK' in all_text
+        assert 'icopy-x-nightly' in all_text
+        assert 'Version: v1.2.2' in all_text
+        assert 'Build: deadbee-dirty' in all_text
+        assert 'not upstream' in all_text
 
     def test_up_clamped_at_zero(self):
         """UP on page 0 does not go below 0."""

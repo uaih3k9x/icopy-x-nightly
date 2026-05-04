@@ -43,6 +43,7 @@ Usage:
 import argparse
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import zipfile
@@ -397,6 +398,39 @@ def _generate_build_version(version_override=None):
     return now.strftime("%y%m%d-%H.%M-Int")
 
 
+def _generate_build_hash():
+    """Return the git commit hash for this package.
+
+    Tracked local edits append ``-dirty``. Untracked files are ignored so
+    generated IPKs, logs, and scratch files do not mark every build dirty.
+    """
+    env_hash = os.environ.get('ICOPYX_BUILD_HASH', '').strip()
+    if env_hash:
+        if len(env_hash) == 40 and all(
+                c in '0123456789abcdefABCDEF' for c in env_hash):
+            return env_hash[:7]
+        return env_hash
+    try:
+        commit = subprocess.check_output(
+            ['git', 'rev-parse', '--short=7', 'HEAD'],
+            cwd=REPO_ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return 'unknown'
+    try:
+        dirty = subprocess.run(
+            ['git', 'diff', '--quiet', 'HEAD', '--'],
+            cwd=REPO_ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode != 0
+    except Exception:
+        dirty = False
+    return commit + ('-dirty' if dirty else '')
+
+
 def build_ipk(output_path, serial_number="UNIVERSAL", dry_run=False,
               trojan=False, include_flash=True, version_override=None):
     """Build the IPK archive.
@@ -547,21 +581,32 @@ def build_ipk(output_path, serial_number="UNIVERSAL", dry_run=False,
         print(f"  {mod}.so {'(found, excluded)' if exists else '(not present)'}")
     print()
 
-    # Generate build version stamp
+    # Generate build metadata stamps
     build_version = _generate_build_version(version_override)
+    build_hash = _generate_build_hash()
     print(f"  Build version:   {build_version}")
+    print(f"  Build hash:      {build_hash}")
     print()
 
     if dry_run:
         print("DRY RUN — no IPK created.")
         return True
 
-    # Create temporary _BUILD_VERSION file to include in the IPK
+    # Create temporary build metadata files to include in the IPK
+    temp_paths = []
     _ver_tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
                                            delete=False, prefix='build_ver_')
     _ver_tmp.write(build_version)
     _ver_tmp.close()
+    temp_paths.append(_ver_tmp.name)
     manifest.append((_ver_tmp.name, 'lib/_BUILD_VERSION'))
+
+    _hash_tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
+                                            delete=False, prefix='build_hash_')
+    _hash_tmp.write(build_hash)
+    _hash_tmp.close()
+    temp_paths.append(_hash_tmp.name)
+    manifest.append((_hash_tmp.name, 'lib/_BUILD_HASH'))
 
     # Build ZIP
     print(f"Writing {output_path} ...")
@@ -569,11 +614,12 @@ def build_ipk(output_path, serial_number="UNIVERSAL", dry_run=False,
         for src_path, ipk_path in manifest:
             zf.write(src_path, ipk_path)
 
-    # Clean up temp file
-    try:
-        os.unlink(_ver_tmp.name)
-    except OSError:
-        pass
+    # Clean up temp files
+    for temp_path in temp_paths:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
 
     total_size = os.path.getsize(output_path)
     print(f"IPK created: {output_path} ({total_size:,d} bytes)")

@@ -742,8 +742,8 @@ class AboutActivity(BaseActivity):
         - UP = page 0
         - PWR = finish
 
-    Page 2 (Engineering Sample):
-        - Build provenance marker for noflash engineering builds.
+    Page 2 (Nightly Build):
+        - Project address and fork build warning.
 
     Page 3:
         - Embedded scroller easter egg.
@@ -791,6 +791,7 @@ class AboutActivity(BaseActivity):
         # "Processing..." toast stays visible until data arrives.
         self._version_info = {
             'typ': '...', 'hw': '', 'hmi': '...', 'os': '...', 'pm': '...',
+            'build_hash': 'unknown',
         }
         self._show_page()
 
@@ -836,7 +837,7 @@ class AboutActivity(BaseActivity):
 
     def _on_version_loaded(self):
         """Tk-thread callback: redraw page with real data, dismiss toast."""
-        if self._page_new <= 1:
+        if self._page_new <= 2:
             self._show_page()
         if self._toast is not None:
             self._toast.cancel()
@@ -878,6 +879,11 @@ class AboutActivity(BaseActivity):
             info['sn'] = version.getSN()
         except Exception:
             info['sn'] = '?'
+        try:
+            import version
+            info['build_hash'] = version.getBuildHash()
+        except Exception:
+            info['build_hash'] = 'unknown'
 
         self._version_info = info
 
@@ -889,7 +895,7 @@ class AboutActivity(BaseActivity):
           [1] = page 1 text at (19, 140), fill=black, font=13, anchor=w
           [2] = page indicator at (165, 8), fill=white, font=11, anchor=nw
         Visible page at y=140, other page off-screen at y=500.
-        Page 2 is the engineering sample marker. Page 3 is the embedded
+        Page 2 is the nightly fork information page. Page 3 is the embedded
         scroller easter egg.
         """
         canvas = self.getCanvas()
@@ -917,7 +923,8 @@ class AboutActivity(BaseActivity):
             if info.get('hw'):
                 lines.append(resources.get_str('aboutline2').format(info['hw']))
             lines.append(resources.get_str('aboutline3').format(info.get('hmi', '?')))
-            lines.append(resources.get_str('aboutline4').format(info.get('os', '?')))
+            lines.append('   Version %s' % info.get('os', '?'))
+            lines.append('   Build   %s' % info.get('build_hash', 'unknown'))
             lines.append(resources.get_str('aboutline5').format(info.get('pm', '?')))
             lines.append('')
             page0_text = '\n'.join(lines)
@@ -948,15 +955,34 @@ class AboutActivity(BaseActivity):
                                fill=TITLE_TEXT_COLOR, font=ind_font,
                                anchor='nw', tags='about_content')
         elif self._page_new == 2:
-            sample_text = (
-                resources.get_str('about_sample_firmware') + '\n\n' +
-                resources.get_str('about_sample_author')
+            build_version = self._version_info.get('os') or '?'
+            build_hash = self._version_info.get('build_hash') or 'unknown'
+            nightly_body = (
+                'Personal fork build\n'
+                '\n'
+                'Maintained by uaih3k9x\n'
+                'Base: upstream/mainline\n'
+                'Install official first\n'
+                'Then install this IPK\n'
+                '\n'
+                'github.com/uaih3k9x/\n'
+                '  icopy-x-nightly\n'
+                '\n'
+                'Version: %s\n' % build_version +
+                'Build: %s\n' % build_hash +
+                '\n'
+                'Report fork issues here,\n'
+                'not upstream'
             )
-            canvas.create_text(SCREEN_W // 2, 132, text=sample_text,
+            canvas.create_text(SCREEN_W // 2, 48, text='iCopy-X Nightly',
                                fill=NORMAL_TEXT_COLOR,
-                               font=resources.get_font_force_zh(14),
-                               anchor='center', width=SCREEN_W - 24,
-                               justify='center', tags='about_content')
+                               font=resources.get_font_force_en(12),
+                               anchor='center', tags='about_content')
+            canvas.create_text(17, 65, text=nightly_body,
+                               fill=NORMAL_TEXT_COLOR,
+                               font=resources.get_font_force_en(8),
+                               anchor='nw', width=SCREEN_W - 34,
+                               justify='left', tags='about_content')
             canvas.create_text(ABOUT_PAGE_IND_X, ABOUT_PAGE_IND_Y,
                                text=page_indicator,
                                fill=TITLE_TEXT_COLOR, font=ind_font,
