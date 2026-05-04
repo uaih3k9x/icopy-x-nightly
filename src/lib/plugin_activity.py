@@ -281,6 +281,7 @@ class PluginActivity(BaseActivity):
             pop             — pop the internal screen stack
             set_state:<id>  — transition to a new state
             run:<method>    — call method on plugin instance in bg thread
+            call:<method>   — call method on plugin instance synchronously
             noop            — do nothing
         """
         if not action_str or not isinstance(action_str, str):
@@ -324,6 +325,11 @@ class PluginActivity(BaseActivity):
         if action_str.startswith('run:'):
             method_name = action_str[4:]
             self._handle_run(method_name)
+            return
+
+        if action_str.startswith('call:'):
+            method_name = action_str[5:]
+            self._handle_call(method_name)
             return
 
         logger.warning("Unknown plugin action: %s", action_str)
@@ -846,6 +852,39 @@ class PluginActivity(BaseActivity):
     # ------------------------------------------------------------------
     # Background task execution (run:<method>)
     # ------------------------------------------------------------------
+
+    def _handle_call(self, method_name):
+        """Call a plugin method synchronously on the UI thread.
+
+        This is intended for cheap UI-only actions such as custom canvas
+        drawing and view-local state changes.  Long-running work should
+        continue to use ``run:<method>``.
+        """
+        if self._plugin_instance is None:
+            logger.warning("No plugin instance for call:%s", method_name)
+            self._show_error_toast("Plugin has no entry class")
+            return
+
+        method = getattr(self._plugin_instance, method_name, None)
+        if method is None or not callable(method):
+            logger.warning("Plugin method not found: %s", method_name)
+            self._show_error_toast("Method not found: %s" % method_name)
+            return
+
+        try:
+            result = method()
+        except Exception as exc:
+            logger.error("Plugin call:%s error: %s",
+                         method_name, traceback.format_exc())
+            self._state['_error'] = str(exc)
+            self._check_transitions('on_error', error=exc)
+            return
+
+        if isinstance(result, dict):
+            self._state.update(result)
+            self._check_transitions_from_result(result)
+        elif result is not None:
+            self._state['_result'] = result
 
     def _handle_run(self, method_name):
         """Call a method on the plugin instance in a background thread.

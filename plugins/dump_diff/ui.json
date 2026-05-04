@@ -6,17 +6,41 @@
         "zh": {
             "strings": {
                 "Dump Diff": "转储对比",
+                "Viking ID": "Viking ID",
                 "Mifare Classic": "Mifare Classic",
                 "Ultralight/NTAG": "Ultralight/NTAG",
+                "Visa2000 ID": "Visa2000 ID",
+                "HID Prox ID": "HID Prox ID",
+                "Animal ID(FDX)": "Animal ID(FDX)",
+                "Paradox ID": "Paradox ID",
+                "Jablotron ID": "Jablotron ID",
+                "Pyramid ID": "Pyramid ID",
+                "Noralsy ID": "Noralsy ID",
+                "NexWatch ID": "NexWatch ID",
+                "Securakey ID": "Securakey ID",
+                "Felica": "Felica",
+                "KERI ID": "KERI ID",
+                "IO Prox ID": "IO Prox ID",
+                "AWID ID": "AWID ID",
+                "Legic Mini 256": "Legic Mini 256",
                 "T5577": "T5577",
-                "EM410x": "EM410x",
-                "HID": "HID",
                 "ISO15693": "ISO15693",
+                "EM410x": "EM410x",
+                "PAC ID": "PAC ID",
+                "GProx II ID": "GProx II ID",
+                "NEDAP ID": "NEDAP ID",
+                "GALLAGHER ID": "GALLAGHER ID",
+                "Presco ID": "Presco ID",
+                "Indala ID": "Indala ID",
                 "iClass": "iClass",
+                "EM4X05 ID": "EM4X05 ID",
                 "Back": "返回",
                 "Compare": "对比",
+                "View": "查看",
+                "NextD": "下个",
                 "Diff Result": "对比结果",
                 "Again": "再次",
+                "Diff View": "差异查看",
                 "Diff Error": "对比错误"
             }
         }
@@ -37,11 +61,32 @@
                     "items": [
                         {"label": "Mifare Classic", "value": "mf1"},
                         {"label": "Ultralight/NTAG", "value": "mfu"},
-                        {"label": "T5577", "value": "t55xx"},
                         {"label": "EM410x", "value": "em410x"},
-                        {"label": "HID", "value": "hid"},
+                        {"label": "HID Prox ID", "value": "hid"},
+                        {"label": "T5577", "value": "t55xx"},
                         {"label": "ISO15693", "value": "icode"},
-                        {"label": "iClass", "value": "iclass"}
+                        {"label": "iClass", "value": "iclass"},
+                        {"label": "Felica", "value": "felica"},
+                        {"label": "Viking ID", "value": "viking"},
+                        {"label": "Visa2000 ID", "value": "visa2000"},
+                        {"label": "Animal ID(FDX)", "value": "fdx"},
+                        {"label": "Paradox ID", "value": "paradox"},
+                        {"label": "Jablotron ID", "value": "jablotron"},
+                        {"label": "Pyramid ID", "value": "pyramid"},
+                        {"label": "Noralsy ID", "value": "noralsy"},
+                        {"label": "NexWatch ID", "value": "nexwatch"},
+                        {"label": "Securakey ID", "value": "securakey"},
+                        {"label": "KERI ID", "value": "keri"},
+                        {"label": "IO Prox ID", "value": "ioprox"},
+                        {"label": "AWID ID", "value": "awid"},
+                        {"label": "Legic Mini 256", "value": "legic"},
+                        {"label": "PAC ID", "value": "pac"},
+                        {"label": "GProx II ID", "value": "gproxii"},
+                        {"label": "NEDAP ID", "value": "nedap"},
+                        {"label": "GALLAGHER ID", "value": "gallagher"},
+                        {"label": "Presco ID", "value": "presco"},
+                        {"label": "Indala ID", "value": "indala"},
+                        {"label": "EM4X05 ID", "value": "em4x05"}
                     ]
                 },
                 "buttons": {"left": "Back", "right": "Compare"},
@@ -83,11 +128,31 @@
                     ],
                     "scrollable": true
                 },
-                "buttons": {"left": "Back", "right": "Again"},
+                "buttons": {"left": "Back", "right": "View"},
                 "keys": {
-                    "M1": "finish",
-                    "M2": "set_state:idle",
-                    "OK": "set_state:idle"
+                    "M1": "set_state:idle",
+                    "M2": "set_state:viewer",
+                    "OK": "set_state:viewer"
+                }
+            }
+        },
+        "viewer": {
+            "on_enter": "call:show_viewer",
+            "screen": {
+                "title": "Diff View",
+                "content": {
+                    "type": "empty"
+                },
+                "buttons": {"left": "Back", "right": "NextD"},
+                "keys": {
+                    "M1": "set_state:result",
+                    "M2": "call:viewer_next_changed",
+                    "OK": "call:viewer_toggle_side",
+                    "LEFT": "call:viewer_prev_page",
+                    "RIGHT": "call:viewer_next_page",
+                    "UP": "call:viewer_prev_changed",
+                    "DOWN": "call:viewer_next_changed",
+                    "ALL": "call:viewer_toggle_changed_only"
                 }
             }
         },
