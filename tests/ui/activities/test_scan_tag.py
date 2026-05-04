@@ -9,9 +9,10 @@ Ground truth (from reimplementation):
     - There is NO idle state with a type list on initial creation
     - 6 states: idle, scanning, found, not_found, wrong_type, multi_tags
     - SCANNING: ALL keys are ignored (key handler returns early)
-    - Result states (FOUND/NOT_FOUND/WRONG_TYPE/MULTI):
-        M1/M2/OK: rescan (_clearContent + _startScan)
-        PWR: dismiss toast first (if visible), then finish
+    - Result states:
+        FOUND/MULTI: M1/M2/OK rescan or simulate as mapped
+        NOT_FOUND/WRONG_TYPE: only M2 rescans
+        PWR: exit activity
     - Scan cache stored on FOUND result
     - Return codes: CODE_TAG_LOST=-2, CODE_TAG_MULT=-3,
       CODE_TAG_NO=-4, CODE_TAG_TYPE_WRONG=-5, CODE_TIMEOUT=-1
@@ -44,7 +45,17 @@ def _setup_actstack():
     """Reset actstack and install MockCanvas factory for each test."""
     actstack._reset()
     actstack._canvas_factory = lambda: MockCanvas()
+    try:
+        import executor
+        executor.CONTENT_OUT_IN__TXT_CACHE = ''
+    except Exception:
+        pass
     yield
+    try:
+        import executor
+        executor.CONTENT_OUT_IN__TXT_CACHE = ''
+    except Exception:
+        pass
     actstack._reset()
 
 
@@ -60,6 +71,13 @@ def _create_console(bundle=None):
     from activity_main import ConsolePrinterActivity
     act = actstack.start_activity(ConsolePrinterActivity, bundle)
     return act
+
+
+def _hold_async_scan(monkeypatch):
+    """Keep ScanActivity in SCANNING until the test drives the result."""
+    import scan
+    monkeypatch.setattr(scan.Scanner, 'scan_all_asynchronous',
+                        lambda self: None)
 
 
 def _make_found_result(tag_type=1, uid='2C AD C2 72'):
@@ -222,79 +240,85 @@ class TestScanActivityKeyEvents:
     """ScanActivity key event handling tests.
 
     Key behavior from reimplementation:
-    - SCANNING: ALL keys return early (ignored)
-    - Result states: M1/M2/OK → rescan, PWR → dismiss toast then finish
+    - SCANNING: non-PWR keys return early; PWR cancels/exits
+    - Result states: mapped rescan keys restart scan, PWR exits
     """
 
-    def test_scanning_all_keys_ignored(self):
-        """In SCANNING, ALL keys are ignored (handler returns early)."""
+    def test_scanning_non_pwr_keys_ignored(self, monkeypatch):
+        """In SCANNING, non-PWR keys are ignored."""
+        _hold_async_scan(monkeypatch)
         act = _create_scan()
         assert act.state == act.STATE_SCANNING
-        for key in (KEY_M1, KEY_M2, KEY_OK, KEY_UP, KEY_DOWN, KEY_PWR):
+        for key in (KEY_M1, KEY_M2, KEY_OK, KEY_UP, KEY_DOWN):
             act.onKeyEvent(key)
-        # Still scanning — none of the keys had any effect
         assert act.state == act.STATE_SCANNING
+        assert not act.life.destroyed
 
-    def test_found_m1_rescans(self):
+    def test_scanning_pwr_exits(self, monkeypatch):
+        """In SCANNING, PWR cancels the scan and exits."""
+        _hold_async_scan(monkeypatch)
+        act = _create_scan()
+        assert act.state == act.STATE_SCANNING
+        act.onKeyEvent(KEY_PWR)
+        assert act.life.destroyed
+
+    def test_found_m1_rescans(self, monkeypatch):
         """In FOUND, M1 triggers a rescan."""
+        _hold_async_scan(monkeypatch)
         act = _create_scan()
         act._onScanResult(_make_found_result())
         assert act.state == act.STATE_FOUND
         act.onKeyEvent(KEY_M1)
         assert act.state == act.STATE_SCANNING
 
-    def test_found_m2_rescans(self):
+    def test_found_m2_rescans(self, monkeypatch):
         """In FOUND, M2 triggers a rescan."""
+        _hold_async_scan(monkeypatch)
         act = _create_scan()
         act._onScanResult(_make_found_result())
         act.onKeyEvent(KEY_M2)
         assert act.state == act.STATE_SCANNING
 
-    def test_found_pwr_dismisses_toast_then_exits(self):
-        """In FOUND, first PWR dismisses toast, second PWR exits.
-
-        Must also clear busy state (set by _startScan in onCreate)
-        since _onScanResult alone does not call setidle(). In real
-        usage, onScanFinish calls setidle() before _onScanResult.
-        """
+    def test_found_pwr_exits(self):
+        """In FOUND, PWR exits after dismissing any visible toast."""
         act = _create_scan()
         # Simulate full scan completion: clear scanning/busy flags
         act._is_scanning = False
         act.setidle()
         act._onScanResult(_make_found_result())
         assert act.state == act.STATE_FOUND
-        # First PWR: _handlePWR dismisses the visible toast
-        act.onKeyEvent(KEY_PWR)
-        assert not act.life.destroyed
-        # Second PWR: toast gone, so finish() is called
         act.onKeyEvent(KEY_PWR)
         assert act.life.destroyed
 
-    def test_not_found_m1_rescans(self):
-        """In NOT_FOUND, M1 triggers a rescan."""
+    def test_not_found_m1_ignored(self, monkeypatch):
+        """In NOT_FOUND, M1 is hidden/unmapped."""
+        _hold_async_scan(monkeypatch)
         act = _create_scan()
         act._onScanResult(_make_not_found_result())
         assert act.state == act.STATE_NOT_FOUND
         act.onKeyEvent(KEY_M1)
-        assert act.state == act.STATE_SCANNING
+        assert act.state == act.STATE_NOT_FOUND
 
-    def test_not_found_m2_rescans(self):
+    def test_not_found_m2_rescans(self, monkeypatch):
         """In NOT_FOUND, M2 triggers a rescan."""
+        _hold_async_scan(monkeypatch)
         act = _create_scan()
         act._onScanResult(_make_not_found_result())
         act.onKeyEvent(KEY_M2)
         assert act.state == act.STATE_SCANNING
 
-    def test_wrong_type_m1_rescans(self):
-        """In WRONG_TYPE, M1 triggers a rescan."""
+    def test_wrong_type_m1_ignored(self, monkeypatch):
+        """In WRONG_TYPE, M1 is hidden/unmapped."""
+        _hold_async_scan(monkeypatch)
         act = _create_scan()
         act._onScanResult(_make_wrong_type_result())
         assert act.state == act.STATE_WRONG_TYPE
         act.onKeyEvent(KEY_M1)
-        assert act.state == act.STATE_SCANNING
+        assert act.state == act.STATE_WRONG_TYPE
 
-    def test_multi_m2_rescans(self):
+    def test_multi_m2_rescans(self, monkeypatch):
         """In MULTI, M2 triggers a rescan."""
+        _hold_async_scan(monkeypatch)
         act = _create_scan()
         act._onScanResult(_make_multi_result())
         assert act.state == act.STATE_MULTI
@@ -546,6 +570,27 @@ class TestConsolePrinterActivity:
         assert hasattr(act, '_console')
         assert act._console is not None
 
+    def test_lua_console_mode_uses_clean_lua_view(self):
+        """Lua-launched console uses the compact Lua output view."""
+        from lib.widget import LuaConsoleView
+
+        act = _create_console({
+            'console_mode': 'lua',
+            'script_name': 'hf_read',
+            'script_label': 'HF Read',
+        })
+
+        assert isinstance(act._console, LuaConsoleView)
+        act._console.addText(
+            '[usb|script] pm3 --> script run hf_read\n'
+            '[+] executing lua /mnt/upan/luascripts/hf_read.lua\n'
+            '[+] UID: AA BB CC DD\n'
+        )
+        texts = '\n'.join(act.getCanvas().get_all_text())
+        assert '[usb|script]' not in texts
+        assert 'executing lua' not in texts
+        assert 'UID: AA BB CC DD' in texts
+
     def test_console_add_lines(self):
         """addLine adds text to the ConsoleView."""
         act = _create_console()
@@ -558,6 +603,58 @@ class TestConsolePrinterActivity:
         act = _create_console()
         act._console.addText('line1\nline2\nline3')
         assert act._console.getLineCount() == 3
+
+    def test_command_console_clears_stale_pm3_cache(self):
+        """A command-launched console must not render a previous command."""
+        import executor
+
+        calls = []
+        executor.CONTENT_OUT_IN__TXT_CACHE = 'old lua output\n'
+        original_start = executor.startPM3Task
+        executor.startPM3Task = lambda cmd, timeout=-1: calls.append((cmd, timeout)) or 1
+        try:
+            act = _create_console({'cmd': 'script run next_script'})
+        finally:
+            executor.startPM3Task = original_start
+
+        assert executor.CONTENT_OUT_IN__TXT_CACHE == ''
+        assert act._console.getLineCount() == 0
+        assert calls == [('script run next_script', -1)]
+
+    def test_command_console_pwr_stops_running_pm3_task(self):
+        """Leaving a command console aborts long-running PM3 script tasks."""
+        import executor
+
+        start_calls = []
+        stop_calls = []
+        reset_calls = []
+        original_start = executor.startPM3Task
+        original_stop = executor.stopPM3Task
+        original_reset = executor.resetReworkCount
+        executor.startPM3Task = lambda cmd, timeout=-1: start_calls.append((cmd, timeout)) or 1
+        executor.stopPM3Task = lambda wait=True: stop_calls.append(wait)
+        executor.resetReworkCount = lambda: reset_calls.append(True)
+        try:
+            act = _create_console({'cmd': 'script run data_example_cmdline'})
+            act.onKeyEvent(KEY_PWR)
+        finally:
+            executor.startPM3Task = original_start
+            executor.stopPM3Task = original_stop
+            executor.resetReworkCount = original_reset
+
+        assert start_calls == [('script run data_example_cmdline', -1)]
+        assert stop_calls == [False]
+        assert reset_calls == [True]
+        assert act.life.destroyed
+
+    def test_view_only_console_keeps_existing_pm3_cache(self):
+        """A console without a new command still shows the current PM3 cache."""
+        import executor
+
+        executor.CONTENT_OUT_IN__TXT_CACHE = 'existing output'
+        act = _create_console()
+
+        assert act._console.getLineCount() == 1
 
     def test_m1_zooms_out(self):
         """M1 key zooms out (textfontsizedown), does NOT finish activity."""

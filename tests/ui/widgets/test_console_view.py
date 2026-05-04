@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'src'))
 
-from lib.widget import ConsoleView
+from lib.widget import ConsoleView, LuaConsoleView
 from lib._constants import (
     CONTENT_Y0,
     CONTENT_H,
@@ -216,3 +216,57 @@ class TestConsoleViewFont:
         text_items = _get_text_items(canvas)
         _, t = text_items[0]
         assert t['options']['fill'] == CONSOLE_TEXT_COLOR
+
+
+# =================================================================
+# LuaConsoleView
+# =================================================================
+
+class TestLuaConsoleView:
+
+    def test_header_shows_script_status_and_subtitle(self, canvas):
+        """Lua console adds a compact script header."""
+        cv = LuaConsoleView(canvas, title='HF Read Friendly Name',
+                            subtitle='hf_read')
+        cv.show()
+
+        texts = _get_texts(canvas)
+        assert 'HF Read Friendly Name' in texts
+        assert 'hf_read' in texts
+        assert 'RUN' in texts
+
+    def test_filters_pm3_transport_noise(self, canvas):
+        """PM3 echo/loader lines are not shown as script output."""
+        cv = LuaConsoleView(canvas, title='HF Read', subtitle='hf_read')
+        cv.show()
+        cv.addText(
+            '[usb|script] pm3 --> script run hf_read\n'
+            '[+] executing lua /mnt/upan/luascripts/hf_read.lua\n'
+            "[+] args ''\n"
+            '[+] UID: AA BB CC DD\n'
+            'Nikola.D: 0\n'
+        )
+
+        joined = '\n'.join(_get_texts(canvas))
+        assert '[usb|script]' not in joined
+        assert 'executing lua' not in joined
+        assert "args ''" not in joined
+        assert 'UID: AA BB CC DD' in joined
+        assert 'OK' in _get_texts(canvas)
+        assert cv.getLineCount() == 1
+
+    def test_long_lua_lines_wrap_for_240_width(self, canvas):
+        """Long PM3 rows wrap instead of requiring horizontal scrolling."""
+        cv = LuaConsoleView(canvas, title='HF Read', subtitle='hf_read')
+        cv.show()
+        cv.addText('Block 00 : ' + ('AA ' * 16))
+
+        assert cv.getLineCount() > 1
+
+    def test_error_output_sets_error_status(self, canvas):
+        """Error-like Lua output is highlighted and reflected in status."""
+        cv = LuaConsoleView(canvas, title='HF Read', subtitle='hf_read')
+        cv.show()
+        cv.addText('timeout while waiting for reply\n')
+
+        assert 'ERR' in _get_texts(canvas)

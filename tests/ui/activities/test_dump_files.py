@@ -51,6 +51,11 @@ def _create_wallet(bundle=None):
     return actstack.start_activity(CardWalletActivity, bundle)
 
 
+def _create_read_history(bundle=None):
+    from activity_main import ReadFromHistoryActivity
+    return actstack.start_activity(ReadFromHistoryActivity, bundle)
+
+
 def _create_wallet_with_files(dump_dir):
     """Create wallet and manually navigate to file list for dump_dir."""
     act = _create_wallet()
@@ -176,3 +181,24 @@ class TestCardWalletActivity:
         assert act._listview.selection() == 1
         act.onKeyEvent(KEY_UP)
         assert act._listview.selection() == 0
+
+    def test_mf1_dump_simulate_uses_original_simulation_activity(self, tmp_path, monkeypatch):
+        """MF1 dump Simulate must not enter the experimental full-dump sim."""
+        from activity_main import MifareDumpSimulationActivity, SimulationActivity
+        monkeypatch.setattr(SimulationActivity, '_startSimForData',
+                            lambda self: None)
+
+        mf1_dir = tmp_path / 'mf1'
+        mf1_dir.mkdir()
+        path = mf1_dir / 'M1-1K-4B_AABBCCDD_1.bin'
+        path.write_bytes(b'\0' * 1024)
+
+        act = _create_read_history(str(path))
+        act.onKeyEvent(KEY_M1)
+
+        stack = list(actstack._ACTIVITY_STACK)
+        assert not any(isinstance(item, MifareDumpSimulationActivity)
+                       for item in stack)
+        sim_acts = [item for item in stack if isinstance(item, SimulationActivity)]
+        assert sim_acts
+        assert sim_acts[-1]._sim_entry[0] == 'M1 S50 1k'

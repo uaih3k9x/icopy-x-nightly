@@ -125,7 +125,10 @@ class TestAboutVersionInfo:
         assert 'iCopy-X' in all_text
         assert '1.7' in all_text
         assert '2.3.1' in all_text
+        assert 'Version' in all_text
         assert '1.0.90' in all_text
+        assert 'Build' in all_text
+        assert 'testhash' in all_text
         assert 'v4.17511' in all_text
 
     def test_serial_number_not_displayed(self):

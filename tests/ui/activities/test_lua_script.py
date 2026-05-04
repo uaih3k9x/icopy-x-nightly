@@ -5,13 +5,14 @@ docs/UI_Mapping/14_lua_script/README.md and V1090_CONSOLE_RECONSTRUCTION.md.
 
 Ground truth:
     - Title: "LUA Script" (paginated as "LUA Script X/Y")
-    - Content: ListView of .lua file names from /mnt/upan/luascripts/
+    - Content: ListView of translated labels for .lua files
     - M1: "" (empty), M2: "OK"
     - UP/DOWN: scroll, LEFT/RIGHT: page, M2/OK: run script, PWR: exit
-    - On run: launches ConsolePrinterActivity with "script run <name>"
+    - On run: launches ConsolePrinterActivity with original "script run <name>"
     - No files: shows "No scripts found" toast
 """
 
+import json
 import os
 import sys
 import types
@@ -57,6 +58,7 @@ def script_dir():
         'didump.lua',
         'formatMifare.lua',
         'hf_bruteforce.lua',
+        'data_example_cmdline.lua',
     ]
     for name in script_names:
         with open(os.path.join(tmpdir, name), 'w') as f:
@@ -103,7 +105,7 @@ class TestLUAScriptCMDActivity:
         """Activity should list .lua files from the script directory."""
         act = _create_lua_activity(script_dir)
         scripts = act.get_scripts()
-        assert len(scripts) == 11  # 11 .lua files created
+        assert len(scripts) == 11  # 12 .lua files created, 1 hidden
         # Files should be sorted alphabetically
         assert scripts == sorted(scripts)
 
@@ -115,6 +117,53 @@ class TestLUAScriptCMDActivity:
             assert not name.endswith('.lua')
         assert 'hf_read' in scripts
         assert 'legic' in scripts
+
+    def test_translation_table_changes_display_only(self, script_dir):
+        """Optional JSON labels change the menu text, not the run target."""
+        with open(os.path.join(script_dir, 'lua_script_names.zh.json'),
+                  'w', encoding='utf-8') as handle:
+            json.dump({
+                'data_example_cmdline': '\u547d\u4ee4\u884c\u793a\u4f8b',
+                'hf_read': '\u9ad8\u9891\u8bfb\u5361',
+            }, handle, ensure_ascii=False)
+
+        act = _create_lua_activity(script_dir)
+        scripts = act.get_scripts()
+        labels = act.get_script_labels()
+
+        assert 'data_example_cmdline' not in scripts
+        assert labels[scripts.index('hf_read')] == '\u9ad8\u9891\u8bfb\u5361'
+        assert labels[scripts.index('calypso')] == 'calypso'
+        assert '\u547d\u4ee4\u884c\u793a\u4f8b' not in act.getCanvas().get_all_text()
+
+        for _ in range(scripts.index('hf_read')):
+            act.onKeyEvent(KEY_DOWN)
+        act.onKeyEvent(KEY_OK)
+
+        top_act = actstack._ACTIVITY_STACK[-1]
+        assert top_act._bundle['cmd'] == 'script run hf_read'
+        assert top_act._bundle['console_mode'] == 'lua'
+        assert top_act._bundle['script_name'] == 'hf_read'
+        assert top_act._bundle['script_label'] == '\u9ad8\u9891\u8bfb\u5361'
+
+    def test_default_interactive_example_hidden(self, script_dir):
+        """Interactive command-line example is not suitable for menu launch."""
+        act = _create_lua_activity(script_dir)
+
+        assert 'data_example_cmdline' not in act.get_scripts()
+        assert 'data_example_cmdline' not in act.get_script_labels()
+
+    def test_hide_table_extends_default_hidden_scripts(self, script_dir):
+        """Optional hide table can hide more scripts from the menu."""
+        with open(os.path.join(script_dir, 'lua_script_hide.json'),
+                  'w', encoding='utf-8') as handle:
+            json.dump({'hidden': ['hf_read']}, handle)
+
+        act = _create_lua_activity(script_dir)
+
+        assert 'data_example_cmdline' not in act.get_scripts()
+        assert 'hf_read' not in act.get_scripts()
+        assert 'legic' in act.get_scripts()
 
     def test_non_lua_files_filtered(self, script_dir):
         """Non-.lua files (like README.txt) should be filtered out."""
@@ -163,6 +212,9 @@ class TestLUAScriptCMDActivity:
         # ConsolePrinterActivity stores the bundle (which contains 'cmd')
         assert hasattr(top_act, '_bundle')
         assert top_act._bundle['cmd'] == 'script run %s' % first_script
+        assert top_act._bundle['console_mode'] == 'lua'
+        assert top_act._bundle['script_name'] == first_script
+        assert top_act._bundle['script_label'] == first_script
 
     def test_m1_does_nothing(self, script_dir):
         """M1 has no label and no action (back is via PWR)."""

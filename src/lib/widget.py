@@ -33,8 +33,9 @@ PageIndicator, ConsoleView, InputMethods, and the createTag utility
 that all widgets share.
 """
 
-import math
 import logging
+import math
+import re
 from typing import List, Optional, Callable
 
 from lib._constants import (
@@ -2177,6 +2178,369 @@ class ConsoleView:
             self._canvas.create_rectangle(
                 sb_x, thumb_y, sb_x + sb_w, thumb_y + thumb_h,
                 fill='#AAAAAA', outline='', tags=self._tag_scrollbar)
+
+
+# =====================================================================
+# LuaConsoleView
+# =====================================================================
+
+class LuaConsoleView(ConsoleView):
+    """Readable 240x240 view for Lua script output.
+
+    ConsoleView intentionally keeps the original raw PM3 terminal look.  Lua
+    scripts are user-launched tools, so this view keeps the same key contract
+    while adding a compact header, status, PM3-noise filtering, and soft wrap.
+    """
+
+    _FONT_SIZE_MIN = 8
+    _FONT_SIZE_MAX = 12
+    _FONT_SIZE_DEFAULT = 10
+
+    _HEADER_H = 34
+    _PAD_X = 8
+    _PAD_Y = 6
+    _SCROLLBAR_W = 3
+
+    _ANSI_RE = re.compile(r'\x1b\[[0-9;?]*[A-Za-z]')
+    _PREFIX_RE = re.compile(r'^\[(?:\+|=|#|!!?|\-|/|\\|\|)\]\s*')
+    _NIKOLA_RE = re.compile(r'^Nikola\.D:\s*(-?\d+)')
+
+    _STATUS_STYLE = {
+        'running': ('RUN', '#1C6AEB'),
+        'done': ('OK', '#18A058'),
+        'error': ('ERR', '#D92D20'),
+        'stopped': ('STOP', '#667085'),
+    }
+
+    _LINE_COLORS = {
+        'normal': '#F2F4F7',
+        'meta': '#98A2B3',
+        'success': '#7CD992',
+        'warning': '#FEC84B',
+        'error': '#FF8A8A',
+    }
+
+    def __init__(self, canvas, x=0, y=0, width=SCREEN_W, height=SCREEN_H,
+                 title='LUA Script', subtitle=''):
+        super().__init__(canvas, x=x, y=y, width=width, height=height)
+        self._title = title or 'LUA Script'
+        self._subtitle = subtitle or ''
+        self._status = 'running'
+        self._line_kinds = []
+
+        self._tag_header = createTag(self, 'lua_header')
+        self._tag_status = createTag(self, 'lua_status')
+
+        self._content_y = self._y + self._HEADER_H
+        self._content_h = max(1, self._height - self._HEADER_H)
+        self._font_size = self._FONT_SIZE_DEFAULT
+        self._update_metrics()
+
+    # -----------------------------------------------------------------
+    # Status and text manipulation
+    # -----------------------------------------------------------------
+
+    def setStatus(self, status):
+        """Set running/done/error/stopped status for the header."""
+        if status not in self._STATUS_STYLE:
+            status = 'running'
+        if self._status == 'error' and status == 'done':
+            return
+        if self._status != status:
+            self._status = status
+            if self._showing:
+                self._redraw()
+
+    def addLine(self, text: str):
+        """Add one Lua output line after cleanup and wrapping."""
+        self.addText(text)
+
+    def addText(self, text: str):
+        """Add Lua output, filtering PM3 transport noise."""
+        if text is None:
+            return
+        text = str(text).replace('\r\n', '\n').replace('\r', '\n')
+        at_bottom = self._is_at_bottom()
+        changed = False
+        raw_lines = text.split('\n')
+        if raw_lines and raw_lines[-1] == '':
+            raw_lines = raw_lines[:-1]
+        for raw_line in raw_lines:
+            cleaned = self._prepare_lua_line(raw_line)
+            if cleaned is None:
+                continue
+            line, kind = cleaned
+            changed = self._append_wrapped_line(line, kind) or changed
+
+        if not changed:
+            return
+        if at_bottom:
+            self.scrollToBottom()
+        if self._showing:
+            self._redraw()
+
+    def clear(self):
+        """Remove displayed Lua output and styles."""
+        self._lines.clear()
+        self._line_kinds.clear()
+        self._scroll_offset = 0
+        self._h_offset = 0
+        if self._showing:
+            self._redraw()
+
+    # -----------------------------------------------------------------
+    # Rendering metrics
+    # -----------------------------------------------------------------
+
+    def _update_metrics(self):
+        """Recalculate body line metrics after font size changes."""
+        self._line_height = self._font_size + 3
+        content_h = getattr(self, '_content_h', self._height)
+        self._max_visible = max(1, content_h // self._line_height)
+        max_offset = max(0, len(self._lines) - self._max_visible)
+        if self._scroll_offset > max_offset:
+            self._scroll_offset = max_offset
+
+    def autofit_font_size(self):
+        """Lua mode wraps lines instead of shrinking text to tiny sizes."""
+        return
+
+    def hide(self):
+        """Remove all Lua console items from the canvas."""
+        super().hide()
+        self._canvas.delete(self._tag_header)
+        self._canvas.delete(self._tag_status)
+
+    # -----------------------------------------------------------------
+    # Lua output cleanup
+    # -----------------------------------------------------------------
+
+    def _prepare_lua_line(self, line):
+        line = self._ANSI_RE.sub('', line or '').strip()
+        if not line:
+            if self._lines and self._lines[-1] != '':
+                return ('', 'meta')
+            return None
+
+        lowered = line.lower()
+        if ' pm3 --> script run ' in lowered:
+            return None
+        if line == 'pm3 -->' or line.startswith('Nikola.D.CMD'):
+            return None
+        if 'executing lua ' in lowered:
+            return None
+
+        nikola = self._NIKOLA_RE.match(line)
+        if nikola:
+            self.setStatus('done' if nikola.group(1) == '0' else 'error')
+            return None
+
+        line = self._PREFIX_RE.sub('', line).strip()
+        if not line:
+            return None
+
+        lowered = line.lower()
+        if lowered.startswith('args') and "''" in line:
+            return None
+        if lowered.startswith('finished '):
+            self.setStatus('done')
+            return None
+
+        kind = 'normal'
+        if any(token in lowered for token in (
+                'error', 'failed', 'fail', 'timeout', 'offline')):
+            kind = 'error'
+            self.setStatus('error')
+        elif any(token in lowered for token in (
+                'warning', 'warn', 'not expected', 'not found')):
+            kind = 'warning'
+        elif any(token in lowered for token in (
+                'success', 'successful', 'saved', 'done')):
+            kind = 'success'
+        elif lowered.startswith('args'):
+            kind = 'meta'
+        return (line, kind)
+
+    def _append_wrapped_line(self, line, kind):
+        changed = False
+        for wrapped in self._wrap_line(line):
+            if wrapped == '' and self._lines and self._lines[-1] == '':
+                continue
+            self._lines.append(wrapped)
+            self._line_kinds.append(kind)
+            changed = True
+        return changed
+
+    def _wrap_line(self, line):
+        if line == '':
+            return ['']
+
+        max_units = self._wrap_units()
+        chunks = []
+        current = ''
+        units = 0
+        for ch in line:
+            ch_units = 2 if ord(ch) > 127 else 1
+            if current and units + ch_units > max_units:
+                chunks.append(current.rstrip())
+                current = ''
+                units = 0
+                if ch == ' ':
+                    continue
+            current += ch
+            units += ch_units
+        if current:
+            chunks.append(current.rstrip())
+        return chunks or ['']
+
+    def _wrap_units(self):
+        body_w = self._width - (self._PAD_X * 2) - self._SCROLLBAR_W - 2
+        char_w = max(5.0, self._font_size * 0.62)
+        return max(12, int(body_w / char_w))
+
+    # -----------------------------------------------------------------
+    # Internal rendering
+    # -----------------------------------------------------------------
+
+    def _redraw(self):
+        self._canvas.delete(self._tag_line)
+        self._canvas.delete(self._tag_bg)
+        self._canvas.delete(self._tag_header)
+        self._canvas.delete(self._tag_status)
+        self._canvas.delete(self._tag_scrollbar)
+        if not self._showing:
+            return
+
+        self._draw_background()
+        self._draw_header()
+        self._draw_lines()
+        self._draw_scrollbar()
+
+    def _draw_background(self):
+        self._canvas.create_rectangle(
+            self._x, self._y,
+            self._x + self._width, self._y + self._height,
+            fill='#101418', outline='',
+            tags=self._tag_bg,
+        )
+        self._canvas.create_rectangle(
+            self._x, self._y,
+            self._x + self._width, self._content_y,
+            fill='#F6F8FA', outline='',
+            tags=self._tag_header,
+        )
+        self._canvas.create_line(
+            self._x, self._content_y,
+            self._x + self._width, self._content_y,
+            fill='#D0D5DD',
+            tags=self._tag_header,
+        )
+        self._canvas.create_rectangle(
+            self._x, self._y,
+            self._x + 4, self._content_y,
+            fill=COLOR_ACCENT, outline='',
+            tags=self._tag_header,
+        )
+
+    def _draw_header(self):
+        status_text, status_color = self._STATUS_STYLE.get(
+            self._status, self._STATUS_STYLE['running'])
+        chip_w = 42 if status_text == 'STOP' else 34
+        chip_h = 16
+        chip_x1 = self._x + self._width - chip_w - 7
+        chip_y1 = self._y + 9
+        chip_x2 = chip_x1 + chip_w
+        chip_y2 = chip_y1 + chip_h
+
+        max_units = 25 if chip_w <= 34 else 23
+        title = self._ellipsize(self._title, max_units)
+        self._canvas.create_text(
+            self._x + 10, self._y + 5,
+            text=title,
+            fill='#111827',
+            font=resources.get_font(12),
+            anchor='nw',
+            tags=self._tag_header,
+        )
+
+        if self._subtitle:
+            subtitle = self._ellipsize(self._subtitle, 30)
+            self._canvas.create_text(
+                self._x + 10, self._y + 21,
+                text=subtitle,
+                fill='#667085',
+                font=resources.get_font_force_en(8),
+                anchor='nw',
+                tags=self._tag_header,
+            )
+
+        self._canvas.create_rectangle(
+            chip_x1, chip_y1, chip_x2, chip_y2,
+            fill=status_color, outline='',
+            tags=self._tag_status,
+        )
+        self._canvas.create_text(
+            (chip_x1 + chip_x2) // 2, chip_y1 + 2,
+            text=status_text,
+            fill='#FFFFFF',
+            font=resources.get_font_force_en(8),
+            anchor='n',
+            tags=self._tag_status,
+        )
+
+    def _draw_lines(self):
+        end = min(self._scroll_offset + self._max_visible, len(self._lines))
+        font_spec = resources.get_font(self._font_size)
+
+        for i, line_idx in enumerate(range(self._scroll_offset, end)):
+            y_pos = self._content_y + self._PAD_Y + i * self._line_height
+            kind = self._line_kinds[line_idx] if line_idx < len(self._line_kinds) else 'normal'
+            self._canvas.create_text(
+                self._x + self._PAD_X - self._h_offset, y_pos,
+                text=self._lines[line_idx],
+                fill=self._LINE_COLORS.get(kind, self._LINE_COLORS['normal']),
+                font=font_spec,
+                anchor='nw',
+                tags=self._tag_line,
+            )
+
+    def _draw_scrollbar(self):
+        total = len(self._lines)
+        if total <= self._max_visible:
+            return
+
+        sb_w = self._SCROLLBAR_W
+        sb_x = self._x + self._width - sb_w
+        sb_y = self._content_y
+        sb_h = self._content_h
+        self._canvas.create_rectangle(
+            sb_x, sb_y, sb_x + sb_w, sb_y + sb_h,
+            fill='#344054', outline='', tags=self._tag_scrollbar)
+        thumb_h = max(10, int(sb_h * self._max_visible / total))
+        thumb_y = sb_y + int(sb_h * self._scroll_offset / total)
+        self._canvas.create_rectangle(
+            sb_x, thumb_y, sb_x + sb_w, thumb_y + thumb_h,
+            fill='#D0D5DD', outline='', tags=self._tag_scrollbar)
+
+    def _ellipsize(self, text, max_units):
+        text = str(text or '')
+        if self._display_units(text) <= max_units:
+            return text
+
+        suffix = '...'
+        limit = max(1, max_units - len(suffix))
+        current = ''
+        units = 0
+        for ch in text:
+            ch_units = 2 if ord(ch) > 127 else 1
+            if units + ch_units > limit:
+                break
+            current += ch
+            units += ch_units
+        return current + suffix
+
+    def _display_units(self, text):
+        return sum(2 if ord(ch) > 127 else 1 for ch in str(text or ''))
 
 
 # =====================================================================

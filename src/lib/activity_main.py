@@ -41,6 +41,7 @@ documented in the UI mapping docs.
 Import convention: ``from lib.activity_main import BacklightActivity`` etc.
 """
 
+import json
 import logging
 import os
 import shutil
@@ -921,7 +922,8 @@ class AboutActivity(BaseActivity):
             if info.get('hw'):
                 lines.append(resources.get_str('aboutline2').format(info['hw']))
             lines.append(resources.get_str('aboutline3').format(info.get('hmi', '?')))
-            lines.append(resources.get_str('aboutline4').format(info.get('os', '?')))
+            lines.append('   Version %s' % info.get('os', '?'))
+            lines.append('   Build   %s' % info.get('build_hash', 'unknown'))
             lines.append(resources.get_str('aboutline5').format(info.get('pm', '?')))
             lines.append('')
             page0_text = '\n'.join(lines)
@@ -1200,44 +1202,64 @@ class ConsolePrinterActivity(BaseActivity):
         self._poll_thread = None
         self._last_cache_len = 0
         self._bundle = bundle
+        self._cmd = (bundle or {}).get('cmd', '')
+        self._console_mode = (bundle or {}).get('console_mode', '')
+        self._live_cache = ''
+        self._cmd_done = False
+        self._cmd_result = None
+        self._stop_requested = False
+        self._poll_stop = False
 
         canvas = self.getCanvas()
         if canvas is None:
             return
 
-        from lib.widget import ConsoleView
-        self._console = ConsoleView(canvas, x=0, y=0,
-                                    width=SCREEN_W, height=SCREEN_H)
+        if self._console_mode == 'lua':
+            from lib.widget import LuaConsoleView
+            label = (bundle or {}).get('script_label') or \
+                (bundle or {}).get('script_name') or resources.get_str('lua_script')
+            subtitle = (bundle or {}).get('script_name') or self._cmd
+            self._console = LuaConsoleView(
+                canvas, x=0, y=0, width=SCREEN_W, height=SCREEN_H,
+                title=label, subtitle=subtitle)
+        else:
+            from lib.widget import ConsoleView
+            self._console = ConsoleView(canvas, x=0, y=0,
+                                        width=SCREEN_W, height=SCREEN_H)
 
-        # Load current PM3 output cache
+        # Execute PM3 command from bundle if present.  Command consoles must
+        # start with a clean cache; otherwise a second Lua script can render
+        # the previous script's result until the new command produces longer
+        # output.
         try:
             import executor
-            cache = getattr(executor, 'CONTENT_OUT_IN__TXT_CACHE', '') or ''
-            if cache:
-                self._console.addText(cache)
-                self._last_cache_len = len(cache)
+            if self._cmd:
+                executor.CONTENT_OUT_IN__TXT_CACHE = ''
+            else:
+                cache = getattr(executor, 'CONTENT_OUT_IN__TXT_CACHE', '') or ''
+                if cache:
+                    self._console.addText(cache)
+                    self._last_cache_len = len(cache)
         except Exception:
             pass
 
         self._console.show()
         self._autofit_done = False
 
-        # Execute PM3 command from bundle if present
         # Ground truth: trace_misc_flows_session2_20260330.txt line 31:
         #   PM3-TASK> script run hf_read timeout=-1
-        cmd = (bundle or {}).get('cmd', '')
-        if cmd:
-            import executor
-            self.startBGTask(lambda: executor.startPM3Task(cmd, -1))
+        if self._cmd:
+            self._cmd_thread = self.startBGTask(self._run_pm3_command)
 
         # Start polling for new content (live updates during execution)
         import threading
         def _poll_content():
             import time
-            while True:
+            while not getattr(self, '_poll_stop', False):
                 try:
-                    import executor
-                    cache = getattr(executor, 'CONTENT_OUT_IN__TXT_CACHE', '') or ''
+                    cache = self._get_console_cache()
+                    if len(cache) < self._last_cache_len:
+                        self._last_cache_len = 0
                     if len(cache) > self._last_cache_len:
                         new_text = cache[self._last_cache_len:]
                         self._last_cache_len = len(cache)
@@ -1248,11 +1270,78 @@ class ConsolePrinterActivity(BaseActivity):
                             self._console.autofit_font_size()
                             if self._console._showing:
                                 self._console._redraw()
+                    if self._cmd_done and hasattr(self._console, 'setStatus'):
+                        self._set_console_status(
+                            'done' if self._cmd_result == 1 else 'error')
                 except Exception:
                     pass
                 time.sleep(0.3)
         self._poll_thread = threading.Thread(target=_poll_content, daemon=True)
         self._poll_thread.start()
+
+    def onDestroy(self):
+        """Stop a command-launched PM3 task when leaving the console."""
+        self._poll_stop = True
+        self._stop_running_command()
+        super().onDestroy()
+
+    def _run_pm3_command(self):
+        """Run the bundled PM3 command and update Lua console status."""
+        import executor
+        try:
+            if self._console_mode == 'lua':
+                self._cmd_result = executor.startPM3Task(
+                    self._cmd, -1, self._on_pm3_live)
+            else:
+                self._cmd_result = executor.startPM3Task(self._cmd, -1)
+        except Exception:
+            self._cmd_result = -1
+            self._set_console_status('error')
+            raise
+        finally:
+            self._cmd_done = True
+            self._set_console_status(
+                'done' if self._cmd_result == 1 else 'error')
+
+    def _on_pm3_live(self, text):
+        """Receive live cumulative PM3 output from executor callbacks."""
+        self._live_cache = text or ''
+
+    def _get_console_cache(self):
+        """Return live callback text for Lua mode, else executor cache."""
+        if self._console_mode == 'lua' and self._live_cache:
+            return self._live_cache
+        try:
+            import executor
+            return getattr(executor, 'CONTENT_OUT_IN__TXT_CACHE', '') or ''
+        except Exception:
+            return ''
+
+    def _set_console_status(self, status):
+        console = getattr(self, '_console', None)
+        if hasattr(console, 'setStatus'):
+            try:
+                console.setStatus(status)
+            except Exception:
+                pass
+
+    def _stop_running_command(self):
+        """Best-effort abort for long-running script/PM3 console commands."""
+        if self._stop_requested or not getattr(self, '_cmd', ''):
+            return
+        self._stop_requested = True
+        self._set_console_status('stopped')
+        try:
+            import hmi_driver
+            hmi_driver.presspm3()
+        except Exception:
+            pass
+        try:
+            import executor
+            executor.stopPM3Task(wait=False)
+            executor.resetReworkCount()
+        except Exception:
+            pass
 
     def onKeyEvent(self, key):
         """Console key handling.
@@ -1268,6 +1357,7 @@ class ConsolePrinterActivity(BaseActivity):
         if key == KEY_PWR:
             if self._handlePWR():
                 return
+            self._stop_running_command()
             self.finish()
         elif key == KEY_M2:
             if hasattr(self, '_console'):
@@ -2631,7 +2721,7 @@ class LUAScriptCMDActivity(BaseActivity):
 
     Screen layout:
         Title: "LUA Script X/Y" (paginated)
-        Content: ListView with .lua file names (5 per page)
+        Content: ListView with translated script labels (5 per page)
         M1: "" (empty), M2: "" (empty)
         UP/DOWN: scroll, LEFT/RIGHT: page, OK/M2: run, PWR: exit
 
@@ -2642,6 +2732,9 @@ class LUAScriptCMDActivity(BaseActivity):
 
     # Default script directory (overridable for testing)
     SCRIPT_DIR = '/mnt/upan/luascripts'
+    SCRIPT_TRANSLATION_FILE = 'lua_script_names.zh.json'
+    SCRIPT_HIDE_FILE = 'lua_script_hide.json'
+    DEFAULT_HIDDEN_SCRIPTS = set(['data_example_cmdline'])
 
     def onCreate(self, bundle):
         """Scan for .lua files and populate the ListView.
@@ -2649,7 +2742,7 @@ class LUAScriptCMDActivity(BaseActivity):
         Flow (from binary):
             1. setTitle("LUA Script")
             2. listLUAFiles() — enumerate .lua files
-            3. Create BigTextListView (paginated) with file names
+            3. Create BigTextListView (paginated) with translated labels
             4. If no files: show "No scripts found" toast
         """
         self.setTitle(resources.get_str('lua_script'))
@@ -2664,6 +2757,11 @@ class LUAScriptCMDActivity(BaseActivity):
 
         # Enumerate .lua files
         self._scripts = self._listLUAFiles()
+        translations = self._loadScriptTranslations()
+        self._script_labels = [
+            translations.get(script_name, script_name)
+            for script_name in self._scripts
+        ]
 
         if not self._scripts:
             self._toast.show(resources.get_str('no_scripts_found'))
@@ -2674,7 +2772,7 @@ class LUAScriptCMDActivity(BaseActivity):
         from lib.widget import ListView
         self._listview = ListView(canvas)
         self._listview.setDisplayItemMax(5)
-        self._listview.setItems(self._scripts)
+        self._listview.setItems(self._script_labels)
         self._listview.setPageModeEnable(True)
         self._listview.show()
 
@@ -2729,15 +2827,72 @@ class LUAScriptCMDActivity(BaseActivity):
         Filter: only files ending with .lua.
         """
         script_dir = self.SCRIPT_DIR
+        hidden = self._loadHiddenScripts()
         files = []
         try:
             for f in os.listdir(script_dir):
                 if f.endswith('.lua'):
-                    files.append(f[:-4])  # strip .lua extension
+                    name = f[:-4]  # strip .lua extension
+                    if name not in hidden:
+                        files.append(name)
         except (OSError, FileNotFoundError):
             pass
         files.sort()
         return files
+
+    def _loadHiddenScripts(self):
+        """Return scripts hidden from the menu.
+
+        ``data_example_cmdline`` is interactive and waits on stdin, which is
+        not available in the 240x240 console UI.  Leaving it visible makes the
+        next script appear stuck because the old Lua task still owns PM3.
+        A JSON file can override/extend the list with either a list or
+        ``{"hidden": [...]}``.
+        """
+        hidden = set(self.DEFAULT_HIDDEN_SCRIPTS)
+        path = os.path.join(self.SCRIPT_DIR, self.SCRIPT_HIDE_FILE)
+        try:
+            with open(path, 'r', encoding='utf-8') as handle:
+                raw = json.load(handle)
+        except (OSError, ValueError, TypeError):
+            return hidden
+
+        if isinstance(raw, dict):
+            raw = raw.get('hidden', [])
+        if not isinstance(raw, list):
+            return hidden
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                hidden.add(item.strip())
+        return hidden
+
+    def _loadScriptTranslations(self):
+        """Load optional script display names from a JSON translation table.
+
+        The table lives next to the Lua scripts.  Keys are script filenames
+        without ``.lua`` and values are display labels.  Missing or invalid
+        entries are ignored so the menu can always fall back to filenames.
+        """
+        path = os.path.join(self.SCRIPT_DIR, self.SCRIPT_TRANSLATION_FILE)
+        try:
+            with open(path, 'r', encoding='utf-8') as handle:
+                raw = json.load(handle)
+        except (OSError, ValueError, TypeError):
+            return {}
+
+        if isinstance(raw, dict) and isinstance(raw.get('scripts'), dict):
+            raw = raw.get('scripts')
+        if not isinstance(raw, dict):
+            return {}
+
+        result = {}
+        for key, value in raw.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                continue
+            label = value.strip()
+            if label:
+                result[key] = label
+        return result
 
     def _runScript(self):
         """Launch ConsolePrinterActivity with 'script run <selected>'.
@@ -2750,7 +2905,11 @@ class LUAScriptCMDActivity(BaseActivity):
         if not self._listview:
             return
 
-        selected = self._listview.getSelection()
+        selected_idx = self._listview.selection()
+        if selected_idx < 0 or selected_idx >= len(self._scripts):
+            return
+
+        selected = self._scripts[selected_idx]
         if not selected:
             return
 
@@ -2758,6 +2917,9 @@ class LUAScriptCMDActivity(BaseActivity):
         bundle = {
             'cmd': cmd,
             'title': resources.get_str('lua_script'),
+            'console_mode': 'lua',
+            'script_name': selected,
+            'script_label': self._script_labels[selected_idx],
         }
         actstack.start_activity(ConsolePrinterActivity, bundle)
 
@@ -2777,6 +2939,10 @@ class LUAScriptCMDActivity(BaseActivity):
     def get_scripts(self):
         """Return the list of discovered script names (for testing)."""
         return list(self._scripts) if hasattr(self, '_scripts') else []
+
+    def get_script_labels(self):
+        """Return display labels shown in the script list."""
+        return list(self._script_labels) if hasattr(self, '_script_labels') else []
 
     def get_listview(self):
         """Return the internal ListView (for testing)."""
@@ -8559,12 +8725,6 @@ class ReadFromHistoryActivity(BaseActivity):
         #         'atqa':'0004','found':True,'type':1})
         # The original passes the full scan cache dict as bundle.
         # SimulationActivity.onCreate extracts sim_index from 'type' field.
-        if self._dump_type_key == 'mf1' and _mfc_dump_size_code(self._file_path or '') is not None:
-            actstack.start_activity(
-                MifareDumpSimulationActivity,
-                {'file_path': self._file_path},
-            )
-            return
         tag_type = self._scan_cache.get('type', -1)
         if tag_type not in _SIMULATE_TYPES:
             return

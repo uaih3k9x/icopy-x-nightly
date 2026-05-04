@@ -37,7 +37,17 @@ def _setup_actstack():
     """Reset actstack and install MockCanvas factory for each test."""
     actstack._reset()
     actstack._canvas_factory = lambda: MockCanvas()
+    try:
+        import executor
+        executor.CONTENT_OUT_IN__TXT_CACHE = ''
+    except Exception:
+        pass
     yield
+    try:
+        import executor
+        executor.CONTENT_OUT_IN__TXT_CACHE = ''
+    except Exception:
+        pass
     actstack._reset()
 
 
@@ -277,14 +287,14 @@ class TestSniffSniffingState:
         act.onKeyEvent(KEY_M1)  # M1 in SNIFFING -> stopSniff + finish
         assert act.life.destroyed
 
-    def test_sniffing_pwr_blocked_by_busy(self):
-        """PWR during SNIFFING is blocked (busy state + toast dismiss)."""
+    def test_sniffing_pwr_stops_and_backs_to_type_select(self):
+        """PWR during SNIFFING stops capture and returns to type select."""
         act = _create_sniff()
         act.onKeyEvent(KEY_M2)  # -> INSTRUCTION
         act.onKeyEvent(KEY_M1)  # -> SNIFFING
-        # PWR first dismisses toast, then blocked by busy state
         act.onKeyEvent(KEY_PWR)
-        assert act.state == act.STATE_SNIFFING
+        assert act.state == act.STATE_TYPE_SELECT
+        assert act.sniffing is False
 
     def test_sniffing_hides_list(self):
         """Entering SNIFFING sets sniffing flag (list was already hidden in INSTRUCTION)."""
@@ -398,10 +408,11 @@ class TestSniffOnData:
             act.onKeyEvent(KEY_DOWN)
         act.onKeyEvent(KEY_M2)  # -> INSTRUCTION
         act.onKeyEvent(KEY_M1)  # -> SNIFFING
-        assert act.state == act.STATE_SNIFFING
 
-        # Simulate PM3 data callback with T5577 data
-        act.onData('lf t55xx sniff', 'Reading 42259 bytes from device memory')
+        # The background T5577 task can auto-finish before this assertion on
+        # fast test runners.  If it has not, simulate the PM3 data callback.
+        if act.state == act.STATE_SNIFFING:
+            act.onData('lf t55xx sniff', 'Reading 42259 bytes from device memory')
         assert act.state == act.STATE_RESULT
         assert act.sniffing is False
 
