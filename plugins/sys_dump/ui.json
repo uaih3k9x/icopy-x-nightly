@@ -1,7 +1,7 @@
 {
     "plugin": true,
     "name": "Diag Dump",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "initial_state": "idle",
     "states": {
         "idle": {
@@ -10,9 +10,10 @@
                 "content": {
                     "type": "text",
                     "lines": [
-                        {"text": "Dump system diagnostics to USB.", "size": "normal"},
+                        {"text": "Dump diagnostics to USB.", "size": "normal"},
                         {"text": ""},
-                        {"text": "Includes dmesg, wlan, lsusb, lspci, modules.", "size": "normal"},
+                        {"text": "Shows NCM/IP/USB self-check first.", "size": "normal"},
+                        {"text": "Full dmesg and USB tree go to file.", "size": "normal"},
                         {"text": ""},
                         {"text": "Press OK to collect.", "size": "normal"}
                     ]
