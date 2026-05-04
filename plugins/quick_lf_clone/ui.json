@@ -2,6 +2,25 @@
     "plugin": true,
     "name": "Quick LF Clone",
     "version": "1.0.0",
+    "i18n": {
+        "zh": {
+            "strings": {
+                "Quick LF Clone": "低频快克隆",
+                "Place source tag on reader": "请将源卡放到读头",
+                "Press OK to scan": "按OK扫描",
+                "Back": "返回",
+                "Found: {tag_type}": "发现: {tag_type}",
+                "ID: {tag_id}": "ID: {tag_id}",
+                "Place blank T55xx, press OK": "放置空白T55xx后按OK",
+                "Clone": "克隆",
+                "Clone successful!": "克隆成功!",
+                "{tag_type}: {tag_id}": "{tag_type}: {tag_id}",
+                "Press OK to restart": "按OK重新开始",
+                "Again": "再次",
+                "Press OK to retry": "按OK重试"
+            }
+        }
+    },
     "initial_state": "idle",
     "states": {
         "idle": {

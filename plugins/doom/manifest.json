@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "author": "Lab401 / id Software (shareware)",
     "description": "DOOM Episode 1 -- Knee-Deep in the Dead",
+    "i18n": {
+        "zh": {
+            "name": "DOOM",
+            "description": "DOOM 第一章 -- Knee-Deep in the Dead"
+        }
+    },
     "canvas_mode": true,
     "entry_class": "DoomPlugin",
     "binary": "doom",

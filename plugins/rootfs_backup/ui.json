@@ -2,6 +2,31 @@
     "plugin": true,
     "name": "RootFS Backup",
     "version": "1.0.0",
+    "i18n": {
+        "zh": {
+            "strings": {
+                "RootFS Backup": "RootFS备份",
+                "Backup boot/rootfs": "备份boot/rootfs",
+                "Saves p1, p2, p3 to": "保存p1,p2,p3到",
+                "/mnt/upan/backups": "/mnt/upan/backups",
+                "Data partition skipped.": "跳过数据分区",
+                "Back": "返回",
+                "Next": "下一步",
+                "Confirm Backup": "确认备份",
+                "Needs about 3.3GB.": "约需3.3GB空间",
+                "Keep USB power on.": "保持USB供电",
+                "PWR aborts backup.": "PWR中止备份",
+                "Do not remove storage.": "不要拔出存储",
+                "Cancel": "取消",
+                "Start": "开始",
+                "Backing Up": "备份中",
+                "Backup Done": "备份完成",
+                "Again": "再次",
+                "Backup Cancelled": "备份已取消",
+                "Backup Error": "备份错误"
+            }
+        }
+    },
     "initial_state": "idle",
     "states": {
         "idle": {

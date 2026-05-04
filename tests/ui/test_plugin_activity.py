@@ -26,6 +26,7 @@ from _constants import (
     LIST_ITEM_H,
 )
 from plugin_activity import PluginActivity
+from lib import resources
 
 
 # =====================================================================
@@ -78,9 +79,11 @@ class MockPlugin(object):
 @pytest.fixture(autouse=True)
 def reset_actstack():
     """Reset actstack state before each test."""
+    resources.setLanguage(0)
     actstack._reset()
     actstack._canvas_factory = lambda: MockCanvas()
     yield
+    resources.setLanguage(0)
     actstack._reset()
 
 
@@ -199,6 +202,40 @@ class TestKeyDispatch:
         # Plugin onCreate sets title to manifest name first,
         # then _render_current_screen may override with screen title
         assert title_text in ('Test', 'Test Plugin')
+
+    def test_zh_i18n_translates_static_screen_text(self):
+        """PluginActivity applies ui.json i18n strings for Chinese."""
+        ui = {
+            'initial_state': 'main',
+            'i18n': {
+                'zh': {
+                    'strings': {
+                        'Test Plugin': '测试插件',
+                        'Hello': '你好',
+                        'Back': '返回',
+                    },
+                },
+            },
+            'states': {
+                'main': {
+                    'screen': {
+                        'title': 'Test Plugin',
+                        'content': {
+                            'type': 'text',
+                            'lines': [{'text': 'Hello'}],
+                        },
+                        'buttons': {'left': 'Back', 'right': None},
+                        'keys': {'M1': 'finish'},
+                    },
+                },
+            },
+        }
+        resources.setLanguage(1)
+        act = _start_plugin(ui=ui)
+        texts = act.getCanvas().get_all_text()
+        assert '测试插件' in texts
+        assert '你好' in texts
+        assert '返回' in texts
 
 
 # =====================================================================

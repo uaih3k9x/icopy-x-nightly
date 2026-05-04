@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "author": "Lab401",
     "description": "Run hw version and display output",
+    "i18n": {
+        "zh": {
+            "name": "PM3原始",
+            "description": "运行 hw version 并显示输出"
+        }
+    },
     "entry_class": "PM3RawPlugin",
     "permissions": ["pm3"],
     "order": 99

@@ -2,6 +2,17 @@
     "plugin": true,
     "name": "HF Deep Scan",
     "version": "1.0.0",
+    "i18n": {
+        "zh": {
+            "strings": {
+                "HF Deep Scan": "高频深扫",
+                "Place tag on reader": "请将卡片放到读头",
+                "Press OK to start deep scan": "按OK开始深度扫描",
+                "Back": "返回",
+                "Rescan": "重扫"
+            }
+        }
+    },
     "initial_state": "idle",
     "states": {
         "idle": {

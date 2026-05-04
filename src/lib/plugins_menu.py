@@ -54,6 +54,17 @@ from lib._constants import (
 logger = logging.getLogger(__name__)
 
 
+def _plugin_display_name(plugin):
+    """Return the plugin name localized for the current language."""
+    fallback = getattr(plugin, 'name', '')
+    try:
+        from lib.plugin_loader import localized_manifest_field
+        return localized_manifest_field(
+            getattr(plugin, 'manifest', {}), 'name', fallback)
+    except Exception:
+        return fallback
+
+
 class PluginsMenuActivity(BaseActivity):
     """Submenu listing all non-promoted plugins.
 
@@ -101,8 +112,7 @@ class PluginsMenuActivity(BaseActivity):
             # plugin list inside the content band (40..200) so the last row is
             # never hidden behind the button label.
             self.lv_plugins.setDisplayItemMax(4)
-            labels = [p.name for p in self._plugins]
-            self.lv_plugins.setItems(labels)
+            self.lv_plugins.setItems(self._plugin_labels())
             icons = [p.icon_path or 'plugin' for p in self._plugins]
             self.lv_plugins.setIcons(icons)
             self.lv_plugins.setOnPageChangeCall(self._onPageChange)
@@ -134,9 +144,8 @@ class PluginsMenuActivity(BaseActivity):
         self._plugins = self._load_plugins()
 
         if self.lv_plugins is not None:
-            labels = [p.name for p in self._plugins]
             icons = [p.icon_path or 'plugin' for p in self._plugins]
-            self.lv_plugins.setItems(labels)
+            self.lv_plugins.setItems(self._plugin_labels())
             self.lv_plugins.setIcons(icons)
 
             new_pos = 0
@@ -153,9 +162,27 @@ class PluginsMenuActivity(BaseActivity):
     def onResume(self):
         """Refresh battery, restore list display and title."""
         super().onResume()
-        if self.lv_plugins is not None and not self.lv_plugins.isShowing():
-            self.lv_plugins.show()
+        if self.lv_plugins is not None:
+            self._apply_plugin_labels(preserve_selection=True)
+            if not self.lv_plugins.isShowing():
+                self.lv_plugins.show()
         self._updateTitle()
+
+    def _plugin_labels(self):
+        """Return localized labels for the current plugin list."""
+        return [_plugin_display_name(p) for p in self._plugins]
+
+    def _apply_plugin_labels(self, preserve_selection=False):
+        """Refresh visible plugin labels after a language change."""
+        if self.lv_plugins is None:
+            return
+        labels = self._plugin_labels()
+        if self.lv_plugins._items == labels:
+            return
+        pos = self.lv_plugins.selection() if preserve_selection else 0
+        self.lv_plugins.setItems(labels)
+        if preserve_selection:
+            self.lv_plugins.setSelection(pos)
 
     def onKeyEvent(self, key):
         """Handle key input on the plugins submenu."""

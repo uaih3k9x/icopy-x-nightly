@@ -18,6 +18,7 @@ import actstack
 from _constants import BTN_BAR_Y0, KEY_PWR, KEY_UP, KEY_DOWN, KEY_OK, KEY_M1, KEY_M2
 from plugin_loader import PluginInfo
 from plugins_menu import PluginsMenuActivity
+from lib import resources
 
 
 # =====================================================================
@@ -56,9 +57,11 @@ def _make_plugin_info(name, key, promoted=False, canvas_mode=False, order=100):
 @pytest.fixture(autouse=True)
 def reset_actstack():
     """Reset actstack state before each test."""
+    resources.setLanguage(0)
     actstack._reset()
     actstack._canvas_factory = lambda: MockCanvas()
     yield
+    resources.setLanguage(0)
     actstack._reset()
 
 
@@ -107,6 +110,19 @@ class TestPluginsMenu:
         assert 'Alpha' in names
         assert 'Beta' in names
         assert 'Gamma' not in names
+
+    def test_zh_labels_use_manifest_i18n(self, monkeypatch):
+        """Plugin menu labels use manifest i18n names for Chinese."""
+        import actmain
+        plugin = _make_plugin_info('Alpha', 'alpha', promoted=False, order=10)
+        plugin.manifest['i18n'] = {'zh': {'name': '阿尔法'}}
+        monkeypatch.setattr(actmain, '_discovered_plugins', [plugin])
+
+        resources.setLanguage(1)
+        act = actstack.start_activity(PluginsMenuActivity)
+
+        assert '阿尔法' in act.lv_plugins._items
+        assert 'Alpha' not in act.lv_plugins._items
 
     def test_list_stays_above_back_button(self, monkeypatch):
         """Plugin rows stay out of the bottom Back button bar."""

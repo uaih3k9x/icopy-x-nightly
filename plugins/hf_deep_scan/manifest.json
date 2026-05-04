@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "author": "Lab401",
     "description": "Scan all HF tag types with detailed results",
+    "i18n": {
+        "zh": {
+            "name": "高频深扫",
+            "description": "扫描所有高频卡类型并显示详细结果"
+        }
+    },
     "entry_class": "HFDeepScanPlugin",
     "permissions": ["pm3"],
     "order": 20

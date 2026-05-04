@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "author": "Lab401",
     "description": "One-button LF tag clone workflow",
+    "i18n": {
+        "zh": {
+            "name": "低频快克隆",
+            "description": "一键式低频卡克隆流程"
+        }
+    },
     "entry_class": "QuickLFClonePlugin",
     "permissions": ["pm3"],
     "order": 21

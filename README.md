@@ -51,6 +51,39 @@ This fork now uses three long-lived branches:
 If you are testing new work from this repository, use `nightly`. If you want the
 least risky branch from this fork, use `main` or wait for a tagged build.
 
+## CI / 质量门禁
+
+This fork uses GitHub Actions for a lightweight quality gate on `nightly`,
+`stable`, and `main`.  The gate does not need a self-hosted runner or a real
+iCopy-X device.  It checks Python syntax, plugin structure, language resource,
+plugin translation coverage, the current stable UI/unit test subset,
+whitespace, and a no-flash IPK package build.
+
+Local commands:
+
+```bash
+python tools/lint_plugin.py --all
+python tools/lint_i18n.py --lang zh
+python -m pytest -q \
+  tests/ui/widgets/test_console_view.py \
+  tests/ui/activities/test_about.py \
+  tests/ui/activities/test_lua_script.py \
+  tests/ui/activities/test_scan_tag.py::TestConsolePrinterActivity \
+  tests/ui/activities/test_dump_files.py \
+  tests/ui/activities/test_simulation.py \
+  tests/ui/activities/test_sniff.py \
+  tests/ui/test_plugin_activity.py \
+  tests/ui/renderer/test_renderer.py \
+  tests/test_install_recovery.py \
+  tests/test_update_search.py \
+  tests/lib/test_dump_diff.py
+python tools/build_ipk.py --sn UNIVERSAL --no-flash --output /tmp/icopy-x-quality-no-flash.ipk
+```
+
+中文说明：目前没有必要自建 CI 机器。GitHub Actions 先负责挡住明显的
+语法、插件、翻译表、UI 测试和打包问题；真实硬件测试、SSH 恢复、刷机验证仍然放在
+本地设备流程里做。
+
 ## Experimental Work in This Fork
 
 This fork currently carries local, in-progress work that is intentionally more
@@ -103,6 +136,9 @@ aggressive than the upstream project:
 - JSON plugin list screens can mirror the selected item into plugin variables
   and render radio-style selection.  Dump Diff now uses this for direct
   dump-type selection instead of a cycle button.
+- Lightweight CI quality gate and `tools/lint_i18n.py` keep the current
+  English/Chinese resources, Lua script labels, and plugin UI strings from
+  silently drifting.
 
 Generated IPKs, raw images, screenshots, Wi-Fi passwords, and device diagnostic
 logs are development artifacts and should not be committed here.

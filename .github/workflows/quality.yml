@@ -1,0 +1,113 @@
+name: Quality Gate
+
+on:
+  pull_request:
+    branches: [main, stable, nightly]
+  push:
+    branches: [main, stable, nightly]
+  workflow_dispatch:
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, Test, Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pillow psutil pyserial
+
+      - name: Compile Python sources
+        run: python -m compileall -q src tools tests plugins
+
+      - name: Lint plugins
+        run: python tools/lint_plugin.py --all
+
+      - name: Lint language resources
+        run: python tools/lint_i18n.py --lang zh
+
+      - name: Run Python tests
+        run: |
+          python -m pytest -q \
+            tests/ui/widgets/test_console_view.py \
+            tests/ui/activities/test_about.py \
+            tests/ui/activities/test_lua_script.py \
+            tests/ui/activities/test_scan_tag.py::TestConsolePrinterActivity \
+            tests/ui/activities/test_dump_files.py \
+            tests/ui/activities/test_simulation.py \
+            tests/ui/activities/test_sniff.py \
+            tests/ui/test_plugin_activity.py \
+            tests/ui/renderer/test_renderer.py \
+            tests/test_install_recovery.py \
+            tests/test_update_search.py \
+            tests/lib/test_dump_diff.py
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Build no-flash IPK
+        run: >
+          python tools/build_ipk.py
+          --sn UNIVERSAL
+          --no-flash
+          --output /tmp/icopy-x-quality-no-flash.ipk
+
+      - name: Verify no-flash IPK contents
+        run: |
+          python - <<'PY'
+          import sys
+          import zipfile
+
+          required = {
+              'app.py',
+              'data/conf.ini',
+              'pm3/proxmark3',
+              'pm3/lua.zip',
+              'lib/_BUILD_VERSION',
+              'lib/_BUILD_HASH',
+          }
+          errors = []
+          with zipfile.ZipFile('/tmp/icopy-x-quality-no-flash.ipk') as zf:
+              names = set(zf.namelist())
+              missing = sorted(required - names)
+              if missing:
+                  errors.append('missing required files: %s' % ', '.join(missing))
+
+              firmware = [
+                  name for name in names
+                  if name.startswith('res/firmware/') and name.endswith('.elf')
+              ]
+              if firmware:
+                  errors.append('no-flash package contains firmware: %s' % firmware)
+
+              plugin_files = [
+                  name for name in names
+                  if name.startswith('plugins/')
+              ]
+              if len(plugin_files) < 5:
+                  errors.append('too few plugin files: %d' % len(plugin_files))
+
+              lua_size = zf.getinfo('pm3/lua.zip').file_size
+              if lua_size < 100000:
+                  errors.append('pm3/lua.zip looks too small: %d bytes' % lua_size)
+
+          if errors:
+              for error in errors:
+                  print('::error::%s' % error)
+              sys.exit(1)
+
+          print('No-flash IPK content check passed')
+          PY

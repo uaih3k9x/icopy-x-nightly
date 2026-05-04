@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "author": "uaih3k9x",
     "description": "Manage the USB NCM/ECM SSH bootstrap service",
+    "i18n": {
+        "zh": {
+            "name": "USB SSH",
+            "description": "管理 USB NCM/ECM SSH 引导服务"
+        }
+    },
     "entry_class": "UsbSshPlugin",
     "permissions": ["shell", "filesystem"],
     "order": 34

@@ -2,6 +2,16 @@
     "plugin": true,
     "name": "PM3 Raw",
     "version": "1.0.0",
+    "i18n": {
+        "zh": {
+            "strings": {
+                "PM3 Raw": "PM3原始",
+                "Press OK to run 'hw version'": "按OK运行 'hw version'",
+                "Back": "返回",
+                "Again": "再次"
+            }
+        }
+    },
     "initial_state": "idle",
     "states": {
         "idle": {

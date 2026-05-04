@@ -3,6 +3,12 @@
     "version": "1.1.0",
     "author": "uaih3k9x",
     "description": "Dump NCM, IP, USB, dmesg and WLAN diagnostics",
+    "i18n": {
+        "zh": {
+            "name": "诊断导出",
+            "description": "导出 NCM、IP、USB、dmesg 和 WLAN 诊断信息"
+        }
+    },
     "entry_class": "SysDumpPlugin",
     "permissions": ["shell"],
     "order": 98

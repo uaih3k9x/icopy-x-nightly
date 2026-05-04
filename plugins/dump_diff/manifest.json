@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "author": "uaih3k9x",
     "description": "Compare the two newest dump files in the selected dump directory",
+    "i18n": {
+        "zh": {
+            "name": "转储对比",
+            "description": "对比所选转储目录中最新的两个文件"
+        }
+    },
     "entry_class": "DumpDiffPlugin",
     "permissions": ["filesystem"],
     "order": 36

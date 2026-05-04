@@ -2,6 +2,25 @@
     "plugin": true,
     "name": "WiFi Manager",
     "version": "1.0.0",
+    "i18n": {
+        "zh": {
+            "strings": {
+                "WiFi Manager": "WiFi管理",
+                "OK: Scan Wi-Fi": "OK: 扫描Wi-Fi",
+                "M2: Connect config": "M2: 连接配置",
+                "Config file:": "配置文件:",
+                "/mnt/upan/wifi.conf": "/mnt/upan/wifi.conf",
+                "Back": "返回",
+                "Connect": "连接",
+                "WiFi Scan": "WiFi扫描",
+                "WiFi Connected": "WiFi已连接",
+                "Off": "断开",
+                "WiFi Off": "WiFi已关闭",
+                "WiFi Error": "WiFi错误",
+                "Retry": "重试"
+            }
+        }
+    },
     "initial_state": "idle",
     "states": {
         "idle": {

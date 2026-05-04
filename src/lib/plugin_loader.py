@@ -67,6 +67,7 @@ _REQUIRED_FIELDS = {
 _OPTIONAL_FIELDS = {
     'author': (str, ''),
     'description': (str, ''),
+    'i18n': (dict, {}),
     'min_fw_version': (str, '1.0.0'),
     'promoted': (bool, False),
     'canvas_mode': (bool, False),
@@ -77,6 +78,11 @@ _OPTIONAL_FIELDS = {
     'key_map': ((dict, type(None)), None),
     'binary': ((str, type(None)), None),
     'args': (list, []),
+}
+
+_LANGUAGE_CODES = {
+    0: 'en',
+    1: 'zh',
 }
 
 
@@ -103,6 +109,47 @@ class PluginInfo:
                 self.entry_class_name, self.promoted,
             )
         )
+
+
+def _active_language_code():
+    """Return the active app language code for plugin metadata."""
+    try:
+        from lib import resources
+    except Exception:
+        try:
+            import resources
+        except Exception:
+            return 'en'
+
+    try:
+        return _LANGUAGE_CODES.get(resources.getLanguage(), 'en')
+    except Exception:
+        return 'en'
+
+
+def localized_manifest_field(manifest, field, fallback=None, lang=None):
+    """Return a localized manifest field when an i18n entry is available."""
+    if not isinstance(manifest, dict):
+        return fallback if fallback is not None else ''
+
+    if fallback is None:
+        fallback = manifest.get(field, '')
+
+    lang = lang or _active_language_code()
+    if lang == 'en':
+        return fallback
+
+    i18n = manifest.get('i18n', {})
+    if not isinstance(i18n, dict):
+        return fallback
+    lang_table = i18n.get(lang, {})
+    if not isinstance(lang_table, dict):
+        return fallback
+
+    value = lang_table.get(field)
+    if isinstance(value, str) and value.strip():
+        return value
+    return fallback
 
 
 def _find_project_root():

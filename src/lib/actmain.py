@@ -120,6 +120,17 @@ def _compose_menu_items():
     items.append(("Settings", "3", "settings_menu"))
     return items
 
+
+def _plugin_display_name(plugin, fallback=None):
+    """Return the plugin name localized for the current language."""
+    fallback = fallback if fallback is not None else getattr(plugin, 'name', '')
+    try:
+        from lib.plugin_loader import localized_manifest_field
+        return localized_manifest_field(
+            getattr(plugin, 'manifest', {}), 'name', fallback)
+    except Exception:
+        return fallback
+
 def init_plugins():
     """Discover and register plugins from the plugins/ directory.
 
@@ -406,6 +417,10 @@ class MainActivity(BaseActivity):
         label, _icon, action_key = item
         key = _MENU_RESOURCE_KEYS.get(action_key)
         if key is None:
+            if action_key.startswith('plugin:'):
+                plugin = self._find_plugin_info(action_key[7:])
+                if plugin is not None:
+                    return _plugin_display_name(plugin, label)
             return label
         text = resources.get_str(key)
         if text == key:

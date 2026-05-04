@@ -2,6 +2,25 @@
     "plugin": true,
     "name": "Dump Diff",
     "version": "1.0.0",
+    "i18n": {
+        "zh": {
+            "strings": {
+                "Dump Diff": "转储对比",
+                "Mifare Classic": "Mifare Classic",
+                "Ultralight/NTAG": "Ultralight/NTAG",
+                "T5577": "T5577",
+                "EM410x": "EM410x",
+                "HID": "HID",
+                "ISO15693": "ISO15693",
+                "iClass": "iClass",
+                "Back": "返回",
+                "Compare": "对比",
+                "Diff Result": "对比结果",
+                "Again": "再次",
+                "Diff Error": "对比错误"
+            }
+        }
+    },
     "initial_state": "idle",
     "states": {
         "idle": {

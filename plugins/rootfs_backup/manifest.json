@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "author": "uaih3k9x",
     "description": "Back up boot, rootfs, and userdata partitions to /mnt/upan",
+    "i18n": {
+        "zh": {
+            "name": "RootFS备份",
+            "description": "将 boot、rootfs 和 userdata 分区备份到 /mnt/upan"
+        }
+    },
     "entry_class": "RootFSBackupPlugin",
     "permissions": ["filesystem"],
     "order": 35

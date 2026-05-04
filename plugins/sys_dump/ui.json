@@ -2,6 +2,21 @@
     "plugin": true,
     "name": "Diag Dump",
     "version": "1.1.0",
+    "i18n": {
+        "zh": {
+            "strings": {
+                "Diag Dump": "诊断导出",
+                "Dump diagnostics to USB.": "导出诊断到U盘",
+                "Shows NCM/IP/USB self-check first.": "先显示NCM/IP/USB自检",
+                "Full dmesg and USB tree go to file.": "完整dmesg和USB树写入文件",
+                "Press OK to collect.": "按OK收集",
+                "Back": "返回",
+                "Again": "再次",
+                "Press OK to retry.": "按OK重试",
+                "Retry": "重试"
+            }
+        }
+    },
     "initial_state": "idle",
     "states": {
         "idle": {

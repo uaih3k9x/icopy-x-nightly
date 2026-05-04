@@ -3,6 +3,12 @@
     "version": "1.0.0",
     "author": "uaih3k9x",
     "description": "Scan and connect USB Wi-Fi without persistent system changes",
+    "i18n": {
+        "zh": {
+            "name": "WiFi管理",
+            "description": "临时扫描并连接 USB Wi-Fi，不持久修改系统"
+        }
+    },
     "entry_class": "WiFiManagerPlugin",
     "permissions": ["shell"],
     "order": 97

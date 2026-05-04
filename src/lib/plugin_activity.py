@@ -64,8 +64,25 @@ from lib.json_renderer import (
     expand_text_rows,
     text_scroll_page_size,
 )
+from lib import resources
 
 logger = logging.getLogger(__name__)
+
+_LANGUAGE_CODES = {
+    0: 'en',
+    1: 'zh',
+}
+
+_LOCALIZABLE_UI_KEYS = frozenset((
+    'name',
+    'title',
+    'page',
+    'label',
+    'text',
+    'message',
+    'header',
+    'subheader',
+))
 
 
 # ======================================================================
@@ -99,6 +116,7 @@ class PluginActivity(BaseActivity):
         self._plugin_dir = None
         self._manifest = {}
         self._ui_def = None
+        self._ui_i18n = {}
         self._plugin_instance = None
         self._renderer = None
         self._state = {}              # variable state for {placeholder} resolution
@@ -133,7 +151,7 @@ class PluginActivity(BaseActivity):
         self._entry_class = bundle.get('entry_class')
         self._permissions = self._manifest.get('permissions', [])
 
-        plugin_name = self._manifest.get('name', 'Plugin')
+        plugin_name = self._localized_manifest_name()
 
         # Set up the renderer on our canvas
         canvas = self.getCanvas()
@@ -324,6 +342,8 @@ class PluginActivity(BaseActivity):
         # Normalize: support both "states" and "screens" keys
         states = ui_def.get('states', ui_def.get('screens', {}))
         entry = ui_def.get('initial_state', ui_def.get('entry_screen'))
+        i18n = ui_def.get('i18n', {})
+        self._ui_i18n = i18n if isinstance(i18n, dict) else {}
 
         if not states:
             logger.error("Plugin ui.json has no states/screens")
@@ -387,6 +407,7 @@ class PluginActivity(BaseActivity):
         # The state definition may be a full state (with 'screen' key)
         # or a bare screen definition.
         screen = state_def.get('screen', state_def)
+        screen = self._localize_screen(screen)
 
         canvas = self.getCanvas()
         if canvas is None:
@@ -450,10 +471,90 @@ class PluginActivity(BaseActivity):
         active = True
         if isinstance(button_def, dict):
             active = button_def.get('active', True)
-            text = button_def.get('text', '')
+            text = self._localize_text(button_def.get('text', ''))
         else:
-            text = button_def
+            text = self._localize_text(button_def)
         return self._renderer.resolve(text), bool(active)
+
+    def _active_language_code(self):
+        """Return the active app language code."""
+        try:
+            return _LANGUAGE_CODES.get(resources.getLanguage(), 'en')
+        except Exception:
+            return 'en'
+
+    def _localized_manifest_name(self):
+        """Return the plugin manifest name localized for the active language."""
+        fallback = self._manifest.get('name', 'Plugin')
+        try:
+            from lib.plugin_loader import localized_manifest_field
+            return localized_manifest_field(self._manifest, 'name', fallback)
+        except Exception:
+            return fallback
+
+    def _ui_translation_map(self):
+        """Return the UI string map for the active language."""
+        lang = self._active_language_code()
+        if lang == 'en':
+            return {}
+        table = self._ui_i18n.get(lang, {})
+        if not isinstance(table, dict):
+            return {}
+        strings = table.get('strings', table)
+        if not isinstance(strings, dict):
+            return {}
+        return strings
+
+    def _localize_text(self, value):
+        """Translate a static plugin UI string when a mapping is available."""
+        if not isinstance(value, str):
+            return value
+        translated = self._ui_translation_map().get(value)
+        if isinstance(translated, str) and translated:
+            return translated
+        return value
+
+    def _localize_buttons(self, buttons):
+        if not isinstance(buttons, dict):
+            return buttons
+        result = {}
+        for key, value in buttons.items():
+            if isinstance(value, dict):
+                value = dict(value)
+                if 'text' in value:
+                    value['text'] = self._localize_text(value.get('text'))
+                result[key] = value
+            elif isinstance(value, str):
+                result[key] = self._localize_text(value)
+            else:
+                result[key] = value
+        return result
+
+    def _localize_obj(self, value, key_name=None):
+        if isinstance(value, dict):
+            result = {}
+            for key, item in value.items():
+                if key == 'i18n':
+                    continue
+                if key == 'buttons':
+                    result[key] = self._localize_buttons(item)
+                elif key in _LOCALIZABLE_UI_KEYS:
+                    result[key] = self._localize_text(item)
+                else:
+                    result[key] = self._localize_obj(item, key)
+            return result
+
+        if isinstance(value, list):
+            return [self._localize_obj(item, key_name) for item in value]
+
+        if key_name in ('lines', 'items') and isinstance(value, str):
+            return self._localize_text(value)
+
+        return value
+
+    def _localize_screen(self, screen):
+        """Return a localized shallow copy of a screen definition."""
+        return self._localize_obj(screen)
 
     def _inject_list_state(self, screen):
         """Inject persisted list selection/scroll into screen content.
@@ -548,7 +649,7 @@ class PluginActivity(BaseActivity):
 
         label_var = content.get('selected_label_var')
         if label_var:
-            updates[label_var] = item.get('label', '')
+            updates[label_var] = self._localize_text(item.get('label', ''))
 
         if updates:
             self._state.update(updates)
@@ -578,7 +679,8 @@ class PluginActivity(BaseActivity):
 
     def _show_screen_toast(self, toast_def):
         """Show a toast defined in a screen's toast field."""
-        text = self._renderer.resolve(toast_def.get('text', ''))
+        text = self._localize_text(toast_def.get('text', ''))
+        text = self._renderer.resolve(text)
         icon = toast_def.get('icon')
         timeout = toast_def.get('timeout', 3000)
         if text:
@@ -608,6 +710,7 @@ class PluginActivity(BaseActivity):
             return
 
         screen = state_def.get('screen', state_def)
+        screen = self._localize_screen(screen)
         content = screen.get('content', {})
         if content.get('type') != 'list':
             return
@@ -685,6 +788,7 @@ class PluginActivity(BaseActivity):
             return False
 
         screen = state_def.get('screen', state_def)
+        screen = self._localize_screen(screen)
         content = screen.get('content', {})
         if content.get('type') != 'text' or not content.get('scrollable'):
             return False

@@ -275,6 +275,7 @@ def _lint_manifest(manifest_path, r):
     _optional_type_checks = {
         'author': str,
         'description': str,
+        'i18n': dict,
         'min_fw_version': str,
         'promoted': bool,
         'canvas_mode': bool,
