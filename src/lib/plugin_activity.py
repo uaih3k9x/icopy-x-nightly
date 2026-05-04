@@ -459,23 +459,101 @@ class PluginActivity(BaseActivity):
         """Inject persisted list selection/scroll into screen content.
 
         Returns a shallow copy of the screen with updated content if
-        the content type is 'list' and we have saved state for this
-        screen.
+        the content type is 'list'.  Plugins may also ask the host to
+        mirror the current item into state variables and to render
+        radio/check indicators from the selected row.
         """
         content = screen.get('content', {})
         if content.get('type') != 'list':
             return screen
 
         state_id = self._current_state_id
-        if state_id in self._list_state:
-            saved = self._list_state[state_id]
-            # Shallow copy screen and content to avoid mutating originals
-            screen = dict(screen)
-            content = dict(content)
-            content['selected'] = saved.get('selected', 0)
-            content['scroll_offset'] = saved.get('scroll_offset', 0)
-            screen['content'] = content
+        items = content.get('items', [])
+        page_size = self._list_page_size(content)
+        saved = self._list_state.get(state_id, {})
+
+        default_selected = self._list_index_value(content.get('selected', 0), 0)
+        selected = self._list_index_value(saved.get('selected', default_selected),
+                                          default_selected)
+        if items:
+            selected = max(0, min(selected, len(items) - 1))
+        else:
+            selected = 0
+
+        default_scroll = self._list_index_value(content.get('scroll_offset', 0), 0)
+        scroll_offset = self._list_index_value(saved.get('scroll_offset', default_scroll),
+                                               default_scroll)
+        max_offset = max(0, len(items) - page_size)
+        scroll_offset = max(0, min(scroll_offset, max_offset))
+        if items:
+            if selected < scroll_offset:
+                scroll_offset = selected
+            elif selected >= scroll_offset + page_size:
+                scroll_offset = selected - page_size + 1
+
+        self._list_state[state_id] = {
+            'selected': selected,
+            'scroll_offset': scroll_offset,
+        }
+        self._apply_list_selection_vars(content, selected)
+
+        # Shallow copy screen and content to avoid mutating originals.
+        screen = dict(screen)
+        content = dict(content)
+        content['selected'] = selected
+        content['scroll_offset'] = scroll_offset
+        if content.get('checked_by_selection'):
+            content['items'] = self._items_checked_by_selection(items, selected)
+        screen['content'] = content
         return screen
+
+    def _list_page_size(self, content):
+        page_size = self._list_index_value(content.get('page_size', 5), 5)
+        return max(1, page_size)
+
+    def _list_index_value(self, value, default=0):
+        if isinstance(value, str):
+            resolver = self._renderer.resolve if self._renderer is not None else None
+            if resolver is not None:
+                value = resolver(value)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _items_checked_by_selection(self, items, selected):
+        result = []
+        for idx, item in enumerate(items):
+            if isinstance(item, dict):
+                item_copy = dict(item)
+                item_copy['checked'] = (idx == selected)
+                result.append(item_copy)
+            else:
+                result.append(item)
+        return result
+
+    def _apply_list_selection_vars(self, content, selected):
+        items = content.get('items', [])
+        if selected < 0 or selected >= len(items):
+            return
+        item = items[selected]
+        if not isinstance(item, dict):
+            return
+
+        updates = {}
+        value_var = content.get('selected_var')
+        if value_var:
+            value = item.get('value', item.get('label', ''))
+            updates[value_var] = value
+
+        label_var = content.get('selected_label_var')
+        if label_var:
+            updates[label_var] = item.get('label', '')
+
+        if updates:
+            self._state.update(updates)
+            if self._renderer is not None:
+                self._renderer.set_state(updates)
 
     def _inject_text_scroll_state(self, screen):
         """Inject persisted text scroll offset into scrollable text content."""
@@ -538,13 +616,13 @@ class PluginActivity(BaseActivity):
         if not items:
             return
 
-        page_size = content.get('page_size', 5)
+        page_size = self._list_page_size(content)
         state_id = self._current_state_id
 
         # Get current list state
         saved = self._list_state.get(state_id, {'selected': 0, 'scroll_offset': 0})
-        selected = saved.get('selected', 0)
-        scroll_offset = saved.get('scroll_offset', 0)
+        selected = self._list_index_value(saved.get('selected', 0), 0)
+        scroll_offset = self._list_index_value(saved.get('scroll_offset', 0), 0)
 
         # Compute new selection
         new_selected = selected + n
@@ -560,6 +638,7 @@ class PluginActivity(BaseActivity):
             'selected': new_selected,
             'scroll_offset': scroll_offset,
         }
+        self._apply_list_selection_vars(content, new_selected)
 
         self._render_current_screen()
 
@@ -580,11 +659,12 @@ class PluginActivity(BaseActivity):
 
         state_id = self._current_state_id
         saved = self._list_state.get(state_id, {'selected': 0, 'scroll_offset': 0})
-        selected = saved.get('selected', 0)
+        selected = self._list_index_value(saved.get('selected', 0), 0)
 
         if selected < 0 or selected >= len(items):
             return
 
+        self._apply_list_selection_vars(content, selected)
         item = items[selected]
         action = item.get('action')
         if action:
