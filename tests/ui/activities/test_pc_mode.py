@@ -6,13 +6,13 @@ docs/UI_Mapping/07_pc_mode/README.md.
 Ground truth:
     - Title: "PC-Mode" (resources key: pc-mode)
     - IDLE state: M1="Start", M2="Start"
-    - RUNNING state: M1="Stop", M2="Button"
+    - RUNNING state: M1="", M2="Stop"
     - M1/M2/OK in IDLE: start PC mode -> STARTING -> RUNNING
     - M1/M2 in RUNNING: stop PC mode -> STOPPING -> finish()
     - PWR in IDLE: finish()
     - PWR in RUNNING: stop PC mode + finish()
     - Content: "Please connect to\\nthe computer.Then\\npress start button"
-    - Toast running: "PC-mode Running..."
+    - Toast running: "PC-Mode Running..."
 """
 
 import sys
@@ -55,6 +55,9 @@ def install_stubs():
     gadget_mod = types.ModuleType('gadget_linux')
     gadget_mod.upan_and_serial = lambda: None
     gadget_mod.kill_all_module = lambda: None
+    gadget_mod.is_rescue_usb_active = lambda: False
+    gadget_mod.suspend_rescue_usb = lambda: False
+    gadget_mod.resume_rescue_usb = lambda background=True: False
     sys.modules['gadget_linux'] = gadget_mod
 
     # executor stub
@@ -189,7 +192,7 @@ class TestPCModeActivity:
         assert act.get_state() == 'stopping'
 
     def test_button_label_changes_running(self):
-        """In RUNNING state, M1='Stop', M2='Button'."""
+        """In RUNNING state, M1 is hidden and M2='Stop'."""
         act = _create_pcmode()
         # Force to RUNNING state and update buttons
         act._state = 'running'
@@ -197,7 +200,7 @@ class TestPCModeActivity:
         canvas = act.getCanvas()
         texts = canvas.get_all_text()
         assert 'Stop' in texts
-        assert 'Button' in texts
+        assert 'Button' not in texts
 
     def test_running_m1_triggers_stop(self):
         """M1 in RUNNING state triggers stop sequence."""
@@ -222,13 +225,13 @@ class TestPCModeActivity:
         assert act.get_state() in ('stopping',)
 
     def test_show_running_toast(self):
-        """showRunningToast displays 'PC-mode Running...'."""
+        """showRunningToast displays 'PC-Mode Running...'."""
         act = _create_pcmode()
         act.showRunningToast()
         # Toast should be shown on canvas
         canvas = act.getCanvas()
         texts = canvas.get_all_text()
-        assert 'PC-mode Running...' in texts
+        assert 'PC-Mode Running...' in texts
 
     def test_up_down_ignored_in_idle(self):
         """UP/DOWN keys have no effect in IDLE (no list)."""
@@ -237,3 +240,39 @@ class TestPCModeActivity:
         assert act.get_state() == 'idle'
         act.onKeyEvent(KEY_DOWN)
         assert act.get_state() == 'idle'
+
+    def test_rescue_usb_suspended_and_resumed_when_active(self, install_stubs):
+        """Active rescue USB is stopped for PC mode and restarted on exit."""
+        calls = []
+        gadget_mod = sys.modules['gadget_linux']
+        gadget_mod.is_rescue_usb_active = lambda: True
+        gadget_mod.suspend_rescue_usb = lambda: calls.append('suspend') or True
+        gadget_mod.resume_rescue_usb = (
+            lambda background=True: calls.append(('resume', background)) or True
+        )
+
+        act = _create_pcmode()
+        act._suspend_rescue_usb_if_needed()
+        assert act._resume_rescue_usb is True
+        assert calls == ['suspend']
+
+        act._resume_rescue_usb_if_needed()
+        assert act._resume_rescue_usb is False
+        assert calls == ['suspend', ('resume', True)]
+
+    def test_rescue_usb_not_resumed_when_inactive(self, install_stubs):
+        """Inactive rescue USB is left alone."""
+        calls = []
+        gadget_mod = sys.modules['gadget_linux']
+        gadget_mod.is_rescue_usb_active = lambda: False
+        gadget_mod.suspend_rescue_usb = lambda: calls.append('suspend') or True
+        gadget_mod.resume_rescue_usb = (
+            lambda background=True: calls.append(('resume', background)) or True
+        )
+
+        act = _create_pcmode()
+        act._suspend_rescue_usb_if_needed()
+        act._resume_rescue_usb_if_needed()
+
+        assert act._resume_rescue_usb is False
+        assert calls == []

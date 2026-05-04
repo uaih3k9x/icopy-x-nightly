@@ -2032,6 +2032,7 @@ class PCModeActivity(BaseActivity):
         self._btlv = None
         self._process_socat = None
         self._child_pid = None
+        self._resume_rescue_usb = False
         super().__init__(bundle)
 
     def onCreate(self, bundle):
@@ -2139,6 +2140,7 @@ class PCModeActivity(BaseActivity):
                 except Exception:
                     pass
             except Exception:
+                self._resume_rescue_usb_if_needed()
                 self._state = self.STATE_IDLE
                 root = actstack._root
                 if root is not None:
@@ -2189,6 +2191,8 @@ class PCModeActivity(BaseActivity):
           and the PC client saw "cannot communicate".
 
         New order (matches factory dmesg):
+          0. suspend rescue USB network     -> free configfs USB-NCM/ECM if
+                                               boot rescue owns the UDC.
           1. executor.startPM3Ctrl()        -> rftask empty-CTL tears
                                                down PM3 subprocess,
                                                releasing /dev/ttyACM0.
@@ -2207,6 +2211,10 @@ class PCModeActivity(BaseActivity):
                                                devices and free.
         """
         import stat as _stat, os as _os, time as _time
+
+        # 0. Boot-rescue USB networking uses the same UDC as PC mode.
+        #    Suspend it now and restore it on stop if it was active.
+        self._suspend_rescue_usb_if_needed()
 
         # 1. Kill PM3 subprocess so /dev/ttyACM0 is free for socat.
         try:
@@ -2278,6 +2286,35 @@ class PCModeActivity(BaseActivity):
             executor.reworkPM3All()
         except Exception:
             pass
+
+        self._resume_rescue_usb_if_needed()
+
+    def _suspend_rescue_usb_if_needed(self):
+        """Suspend boot-rescue USB networking while PC mode owns the UDC."""
+        self._resume_rescue_usb = False
+        try:
+            import gadget_linux
+            is_active = getattr(gadget_linux, 'is_rescue_usb_active', None)
+            suspend = getattr(gadget_linux, 'suspend_rescue_usb', None)
+            if callable(is_active) and is_active():
+                self._resume_rescue_usb = True
+                if callable(suspend):
+                    suspend()
+        except Exception:
+            logger.exception("Failed to suspend rescue USB before PC mode")
+
+    def _resume_rescue_usb_if_needed(self):
+        """Restore boot-rescue USB networking if PC mode suspended it."""
+        if not self._resume_rescue_usb:
+            return
+        self._resume_rescue_usb = False
+        try:
+            import gadget_linux
+            resume = getattr(gadget_linux, 'resume_rescue_usb', None)
+            if callable(resume):
+                resume(background=True)
+        except Exception:
+            logger.exception("Failed to resume rescue USB after PC mode")
 
     def start_socat(self):
         """Start socat bridge: ttyGS0 <-> ttyACM0 (direct serial).

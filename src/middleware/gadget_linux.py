@@ -44,6 +44,10 @@ logger = logging.getLogger(__name__)
 # Device paths — hardcoded in original .so (QEMU-verified)
 _UPAN_PARTITION = '/dev/mmcblk0p4'
 _MOUNT_POINT = '/mnt/upan/'
+_RESCUE_GADGET = '/sys/kernel/config/usb_gadget/icopy_rescue'
+_RESCUE_SERVICE = '/usr/local/sbin/icopy-rescue-net.sh'
+_RESCUE_STOP_LOG = '/tmp/icopy-rescue-net-pcmode-stop.out'
+_RESCUE_RESUME_LOG = '/tmp/icopy-rescue-net-pcmode-resume.out'
 
 
 def get_upan_partition():
@@ -53,6 +57,101 @@ def get_upan_partition():
         str: '/dev/mmcblk0p4' (hardcoded, same as original .so)
     """
     return _UPAN_PARTITION
+
+
+def _read_text(path):
+    try:
+        with open(path, 'r') as fh:
+            return fh.read()
+    except Exception:
+        return ''
+
+
+def _run_rescue_service(action, background=False):
+    """Run the optional boot-rescue network helper if it is installed."""
+    if not os.path.exists(_RESCUE_SERVICE):
+        return False
+    log_path = _RESCUE_RESUME_LOG if action == 'start' else _RESCUE_STOP_LOG
+    suffix = ' &' if background else ''
+    cmd = 'sudo %s %s >%s 2>&1%s' % (
+        _RESCUE_SERVICE, action, log_path, suffix)
+    logger.debug("gadget_linux: %s", cmd)
+    try:
+        return os.system(cmd) == 0
+    except Exception:
+        return False
+
+
+def _unbind_rescue_configfs():
+    """Best-effort unbind of the configfs rescue gadget."""
+    udc_path = os.path.join(_RESCUE_GADGET, 'UDC')
+    if not os.path.exists(udc_path):
+        return False
+    try:
+        with open(udc_path, 'w') as fh:
+            fh.write('\n')
+        return True
+    except Exception:
+        pass
+    try:
+        return os.system(
+            'sudo sh -c \'echo "" > /sys/kernel/config/usb_gadget/'
+            'icopy_rescue/UDC\'') == 0
+    except Exception:
+        return False
+
+
+def is_rescue_usb_active():
+    """Return True when the boot-rescue USB network gadget is active.
+
+    The normal rescue path is a configfs gadget named ``icopy_rescue`` using
+    CDC-NCM first, CDC-ECM second. The fallback path uses ``g_ether`` but still
+    creates ``usb0`` through the same installed rescue service.
+    """
+    udc = _read_text(os.path.join(_RESCUE_GADGET, 'UDC')).strip()
+    if udc:
+        return True
+    if os.path.exists(_RESCUE_SERVICE) and os.path.exists('/sys/class/net/usb0'):
+        return True
+    return False
+
+
+def suspend_rescue_usb():
+    """Stop the optional rescue USB network before another gadget binds.
+
+    Returns True when a rescue USB gadget appeared to be active before the
+    stop attempt. The operation is best-effort because PC mode owns the final
+    gadget transition and will still try to free the UDC before loading
+    g_acm_ms.
+    """
+    was_active = is_rescue_usb_active()
+    if not was_active:
+        return False
+
+    logger.debug("gadget_linux: suspend_rescue_usb()")
+    if _run_rescue_service('stop'):
+        return True
+
+    _unbind_rescue_configfs()
+    try:
+        os.system('sudo ip link set usb0 down 2>/dev/null')
+    except Exception:
+        pass
+    try:
+        os.system('sudo ifconfig usb0 down 2>/dev/null')
+    except Exception:
+        pass
+    try:
+        os.system('sudo modprobe -r g_ether 2>/dev/null')
+    except Exception:
+        pass
+    return True
+
+
+def resume_rescue_usb(background=True):
+    """Restart the optional rescue USB network after PC mode exits."""
+    logger.debug("gadget_linux: resume_rescue_usb(background=%s)", background)
+    return _run_rescue_service('start', background=background)
 
 
 def usb_mass_storage():
@@ -103,16 +202,17 @@ def upan_and_serial():
     See: docs/Real_Hardware_Intel/pcmode_live_audit_20260411.txt §2
 
     UDC pre-flight: the USB Device Controller can host only ONE gadget
-    driver at a time. If a prior gadget (g_mass_storage boot-default, or
-    g_serial from our post-PC-mode teardown) is still bound, g_acm_ms
-    gets queued pending and never enumerates — the PC sees no ttyGS0
-    and PC-mode silently fails. Confirmed live 2026-04-17 via dmesg:
-    "udc-core: couldn't find an available UDC - added [g_acm_ms] to list
-    of pending drivers" while g_mass_storage remained bound. Unload
-    every possible prior gadget before loading g_acm_ms.
+    driver at a time. If a prior gadget (g_mass_storage boot-default, g_serial
+    from our post-PC-mode teardown, or the configfs icopy_rescue USB-NCM rescue
+    gadget) is still bound, g_acm_ms gets queued pending and never enumerates;
+    the PC sees no ttyGS0 and PC-mode silently fails. Confirmed live
+    2026-04-17 via dmesg: "udc-core: couldn't find an available UDC - added
+    [g_acm_ms] to list of pending drivers" while g_mass_storage remained
+    bound. Unload every possible prior gadget before loading g_acm_ms.
     """
     logger.debug("gadget_linux: upan_and_serial()")
     try:
+        suspend_rescue_usb()
         # Free the UDC. modprobe -r on an unloaded module is a no-op.
         for mod in ('g_serial', 'g_mass_storage', 'g_ether', 'g_acm_ms'):
             os.system('sudo modprobe -r %s 2>/dev/null' % mod)
