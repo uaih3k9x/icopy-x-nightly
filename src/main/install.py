@@ -47,6 +47,7 @@ Chinese log messages preserved for parity with original .so output:
 
 import os
 import shutil
+import time
 import zipfile
 
 
@@ -364,7 +365,113 @@ def restart_app(callback):
         callback('Restarting...', 60)
         callback('Restarting...', 100)
 
+    _schedule_usb_ssh_recovery()
     os.system('sudo service icopy restart &')
+
+
+def _schedule_usb_ssh_recovery():
+    """Best-effort recovery for USB NCM SSH after an app update.
+
+    Some hosts keep a stale USB-NCM session when the app is swapped and
+    restarted.  Physically replugging the cable forces re-enumeration; this
+    delayed helper does the device-side equivalent when the optional rescue
+    network service is installed.
+    """
+    unit_name = 'icopy-update-usb-ssh-recover-%s-%s' % (
+        os.getpid(), int(time.time()))
+    service_name = unit_name + '.service'
+    script_path = '/tmp/%s.sh' % unit_name
+
+    try:
+        with open(script_path, 'w') as f:
+            f.write(_usb_ssh_recovery_script())
+        os.chmod(script_path, 0o755)
+    except Exception as e:
+        print("Could not write USB/SSH recovery script: %s" % e)
+        return
+
+    # Prefer systemd-run: it creates a transient unit outside icopy.service's
+    # cgroup, so "service icopy restart" will not kill the delayed recovery.
+    for cmd in (
+        'sudo systemd-run --unit=%s --collect /bin/sh %s' % (unit_name, script_path),
+        'sudo systemd-run --unit=%s /bin/sh %s' % (unit_name, script_path),
+    ):
+        try:
+            if os.system(cmd + ' >/tmp/icopy-update-usb-ssh-schedule.log 2>&1') == 0:
+                print("Scheduled USB/SSH recovery via systemd-run")
+                return
+        except Exception:
+            pass
+
+    # Fallback for older images without systemd-run.
+    unit_path = '/run/systemd/system/%s' % service_name
+    unit_tmp_path = '/tmp/%s' % service_name
+    try:
+        with open(unit_tmp_path, 'w') as f:
+            f.write('[Unit]\n')
+            f.write('Description=iCopy update USB/SSH recovery\n')
+            f.write('\n[Service]\n')
+            f.write('Type=oneshot\n')
+            f.write('ExecStart=/bin/sh %s\n' % script_path)
+        os.chmod(unit_tmp_path, 0o644)
+        if os.system(
+            'sudo cp %s %s >/tmp/icopy-update-usb-ssh-schedule.log 2>&1 '
+            '&& sudo systemctl daemon-reload '
+            '>>/tmp/icopy-update-usb-ssh-schedule.log 2>&1 '
+            '&& sudo systemctl start %s '
+            '>>/tmp/icopy-update-usb-ssh-schedule.log 2>&1' % (
+                unit_tmp_path, unit_path, service_name)) == 0:
+            print("Scheduled USB/SSH recovery via systemd unit")
+            return
+    except Exception as e:
+        print("Could not create USB/SSH recovery unit: %s" % e)
+
+    # Last resort: useful on non-systemd test images, but may be killed when
+    # systemd restarts icopy.service.
+    cmd = "nohup sudo /bin/sh %s >/tmp/icopy-update-usb-ssh-schedule.log 2>&1 &" % script_path
+    try:
+        os.system(cmd)
+        print("Scheduled USB/SSH recovery via nohup fallback")
+    except Exception as e:
+        print("Could not schedule USB/SSH recovery: %s" % e)
+
+
+def _usb_ssh_recovery_script():
+    """Return the shell script used by the post-update recovery unit."""
+    script = (
+        '#!/bin/sh\n'
+        'PATH=/sbin:/usr/sbin:/bin:/usr/bin\n'
+        'LOG=/tmp/icopy-update-usb-ssh-recover.log; '
+        'exec >>"$LOG" 2>&1; '
+        'echo "[recover] scheduled $(date)"; '
+        'sleep 6; '
+        'echo "[recover] running $(date)"; '
+        'if [ -x /usr/local/sbin/icopy-rescue-net.sh ]; then '
+        'echo "[recover] restarting rescue USB network"; '
+        '/usr/local/sbin/icopy-rescue-net.sh restart; '
+        'echo "[recover] rescue rc=$?"; '
+        'else '
+        'echo "[recover] icopy-rescue-net.sh missing"; '
+        'fi; '
+        'if [ -e /sys/class/net/usb0 ]; then '
+        'echo "[recover] ensuring usb0 address"; '
+        '(ip link set usb0 up && '
+        '(ip addr show dev usb0 | grep -q "192.168.7.2" || '
+        'ip addr add 192.168.7.2/24 dev usb0)) 2>/dev/null || '
+        'ifconfig usb0 192.168.7.2 netmask 255.255.255.0 up 2>/dev/null || true; '
+        'fi; '
+        'mkdir -p /var/run/sshd /run/sshd 2>/dev/null; '
+        'echo "[recover] restarting ssh service"; '
+        'systemctl restart sshd 2>/dev/null || '
+        'systemctl restart ssh 2>/dev/null || '
+        'service sshd restart 2>/dev/null || '
+        'service ssh restart 2>/dev/null || '
+        '(/usr/sbin/sshd 2>/dev/null || true); '
+        '(ip addr show dev usb0 2>/dev/null || ifconfig usb0 2>/dev/null || true); '
+        'echo "[recover] done $(date)"; '
+        'sync'
+    )
+    return script
 
 
 def install(unpkg_path, callback):
